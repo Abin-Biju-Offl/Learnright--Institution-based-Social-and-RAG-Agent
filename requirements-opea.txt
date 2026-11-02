@@ -1,0 +1,11 @@
+# OPTIONAL: only needed for OPEA mode (EMBEDDER=tei/opea, LLM=openai_like/opea, VECTOR_STORE=qdrant).
+# The default simple mode needs only requirements.txt.
+#
+#   pip install -r requirements-opea.txt
+
+-r requirements.txt
+
+llama-index-embeddings-text-embeddings-inference==0.6.0  # EMBEDDER=tei
+llama-index-embeddings-opea==0.4.0                        # EMBEDDER=opea
+llama-index-llms-openai-like==0.8.1                        # LLM=openai_like
+llama-index-llms-opea==0.4.1                              # LLM=opea

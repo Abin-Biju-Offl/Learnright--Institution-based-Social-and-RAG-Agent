@@ -1,0 +1,24 @@
+# RAG framework and local model integrations
+llama-index-core==0.14.25
+llama-index-llms-ollama==0.11.0
+llama-index-embeddings-ollama==0.10.0
+
+# Layout-aware PDF parsing, tables, reading order, and OCR support
+docling==2.144.0
+
+# Web server
+fastapi==0.142.4
+uvicorn==0.54.0
+pydantic-settings==2.15.0
+httpx==0.28.1   # used by the health check
+ollama==0.6.3
+
+# Local vector database
+llama-index-vector-stores-qdrant==0.10.3
+qdrant-client==1.19.1
+
+# Auth
+pyjwt==2.15.1
+
+# Tests
+pytest==9.1.1

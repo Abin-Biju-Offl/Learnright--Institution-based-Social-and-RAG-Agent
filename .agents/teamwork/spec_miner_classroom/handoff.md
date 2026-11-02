@@ -1,0 +1,434 @@
+# Google Classroom Architecture & Specification Mining Report
+
+**Date**: 2026-11-02  
+**Agent**: `spec_miner_classroom` (teamwork_spec_miner)  
+**Target File**: `e:\WORK\intel rag llamaindex\.agents\teamwork\spec_miner_classroom\handoff.md`  
+**Reference Document**: `e:\WORK\intel rag llamaindex\.agents\teamwork\ORIGINAL_REQUEST.md`  
+
+---
+
+## Executive Summary
+
+This report establishes the authoritative reference architecture of **Google Classroom** and **Google Workspace for Education**, detailing its organizational hierarchy, course/section abstractions, role-based access control (RBAC), invitation/enrollment mechanisms, and roster management paradigms. It then provides an exact, production-ready architectural translation for the **NCERT Textbook Assistant** (`FastAPI`, `SQLite/SQLAlchemy`, `PyJWT`, `Vite + React`), preserving backwards compatibility with existing student grade enforcement (`enforce_grade`) and parental controls (`app/parental`).
+
+---
+
+## 1. Google Classroom Core Architecture & Reference Models
+
+### 1.1 Organizations & Tenancy
+
+In the Google ecosystem, Classroom operates on top of **Google Workspace for Education**:
+- **Domain/Workspace Tenancy**:
+  - Each educational institution represents an independent customer tenant identified by a global `customerId` and rooted in an authoritative DNS domain (e.g. `dpsrkpuram.edu.in`).
+  - Strict tenant isolation is enforced by default: students and teachers with domain identities (`@school.edu`) cannot discover or join courses outside their domain unless domain cross-trust (allowlisting) is configured by Super Admins.
+- **Organizational Units (OUs)**:
+  - Directory users belong to a hierarchical tree of Organizational Units (e.g. `/`, `/Staff`, `/Teachers`, `/Students`, `/Students/Grade 10`).
+  - System policies are mapped onto OUs. Crucially, the capability to **create** courses is restricted to the `/Teachers` or `/Faculty` OU, while students in `/Students` OUs are restricted to the student role and cannot create courses.
+- **Institution Onboarding & Verification Mechanics**:
+  - In enterprise production, Google verifies an institution via DNS TXT records / HTML web-root verification, followed by accreditation review (K-12 or Higher Ed accreditation).
+  - In staging, sandbox, and demo environments, Google implements **Demo Verification IDs / School Access Codes** allowing administrative provisioning without requiring public DNS modification.
+
+---
+
+### 1.2 Courses, Classrooms & Sections
+
+In Google Classroom API v1, the foundational operational entity is the **Course** (`/v1/courses`).
+
+#### Course Entity Schema (Google Classroom API v1 Reference)
+```json
+{
+  "id": "709214829104",
+  "name": "Class 10 Science",
+  "section": "Section A",
+  "descriptionHeading": "NCERT Class 10 Physics, Chemistry, Biology",
+  "description": "Daily interactive Q&A and curriculum support",
+  "room": "Room 302",
+  "ownerId": "usr_teach_01",
+  "creationTime": "2026-11-01T08:00:00Z",
+  "updateTime": "2026-11-02T09:00:00Z",
+  "enrollmentCode": "x7k9p2",
+  "courseState": "ACTIVE",
+  "alternateLink": "https://classroom.google.com/c/NzA5MjE0ODI5MTA0",
+  "teacherGroupEmail": "class10-secA-teachers@school.edu",
+  "courseGroupEmail": "class10-secA@school.edu",
+  "teacherFolder": {
+    "id": "drive_folder_id_xyz"
+  },
+  "guardiansEnabled": true
+}
+```
+
+#### Lifecycle States (`courseState`)
+1. **`PROVISIONED`**: The course entity is initialized by an admin or batch integration script. It is invisible to students and awaiting the primary teacher's claim/acceptance.
+2. **`ACTIVE`**: Fully functioning. Rosters can accept new enrollments, assignments can be distributed, and students can submit queries/responses.
+3. **`ARCHIVED`**: Read-only archival state. The class is preserved for audits, historic grade reporting, and student review. No new posts, questions, or enrollments are accepted. Students cannot submit coursework; teachers cannot modify content without unarchiving.
+4. **`DECLINED`**: Created when an invited owner rejects course stewardship.
+5. **`SUSPENDED`**: Administrative lock applied at the tenant or compliance level.
+
+#### Entity Division: Class (Grade) vs. Section
+In Google Classroom, `name` typically stores the subject/grade (e.g., "Class 10"), while `section` stores the cohort identifier (e.g., "Section A"). In NCERT schools, this maps directly to:
+- **Class / Grade**: 1 through 12 (NCERT curriculum boundary).
+- **Section**: Sub-cohort division (Section A, B, C, D).
+
+---
+
+### 1.3 Invite Codes & Enrollment Links
+
+Google Classroom differentiates between student enrollment and teacher invitation to prevent privilege escalation:
+
+#### 1. Student Enrollment: Short Codes & Join URLs
+- **Short Alphanumeric Join Code (`enrollmentCode`)**:
+  - 6 to 8 alphanumeric characters (e.g., `x7k9p2`), case-insensitive, omitting ambiguous glyphs (`0`, `O`, `1`, `l`, `I`).
+  - Read-only property generated by Classroom. Can be regenerated (reset) or turned off (disabled) by the teacher.
+- **Student Join URL (`cjc` parameter)**:
+  - Format: `https://classroom.google.com/c/{courseId}?cjc={enrollmentCode}`
+  - Clicking this URL automatically pre-populates the course join dialogue for authenticated students.
+- **Token Characteristics**:
+  - Reusable by multiple students belonging to the same tenant/domain.
+  - Can be revoked/regenerated at any time without impacting currently enrolled students.
+
+#### 2. Lecturer / Teacher Invitations: Dedicated Secure Token
+- **Security Rule**: Google Classroom **never** exposes a public join code for teachers. Allowing teacher enrollment via a generic code would permit students to obtain administrative rights over grading, student rosters, and assignments.
+- **Invitation Entity (`/v1/invitations`)**:
+  - Fields: `id`, `courseId`, `userId`, `role` (`TEACHER` or `STUDENT`), `creationTime`.
+  - For teachers, invitations are explicitly generated per user or sent via a secure, cryptographically signed invite link bound to a teacher email/identity.
+  - **Acceptance Flow**: `POST /v1/invitations/{id}:accept` can only be executed by the authenticated user whose `sub` or email matches the invitation recipient.
+
+---
+
+### 1.4 Roster Management
+
+Google Classroom models course rosters as separate sub-resources:
+- **Primary Teacher (`ownerId`)**:
+  - Holds absolute authority over the course.
+  - Only the primary teacher can: delete the course, transfer course ownership (`courses.patch`), or delete co-teachers.
+- **Co-Teachers (`/v1/courses/{courseId}/teachers`)**:
+  - Can create and grade assignments, review student submissions, mute/unmute students, and view class materials.
+  - Cannot remove the primary teacher, cannot delete the course, and cannot mute fellow teachers.
+  - Limited to a maximum of 50 co-teachers per course in Google Workspace.
+- **Class Advisor / Primary Advisor Pattern**:
+  - In Indian school frameworks (NCERT / CBSE), each section (e.g., Class 10-A) is assigned one **Class Advisor** (Class Teacher). The Class Advisor has pastoral responsibility for that cohort, oversight of all subject performances, and primary parental communication.
+- **Subject Tags**:
+  - Lecturers are assigned to teach specific subjects (e.g., Science, Mathematics, English) across one or more sections.
+- **Students (`/v1/courses/{courseId}/students`)**:
+  - Bound to the course. Enrolled students are assigned dedicated Drive submission folders.
+  - Students can only view their own submissions, grades, and private comments.
+
+---
+
+### 1.5 Tiered RBAC & Authorization Boundaries
+
+Google Workspace + Classroom implements a 4-tier role hierarchy:
+
+```
+┌────────────────────────────────────────────────────────┐
+│               1. Super Admin / Org Admin               │
+│  - Institution Lifecycle, OUs, Domain Policies         │
+│  - Class & Section Creation, Teacher Invites           │
+└───────────────────────────┬────────────────────────────┘
+                            │
+┌───────────────────────────▼────────────────────────────┐
+│              2. Teacher / Lecturer (Faculty)           │
+│  - Coursework, Material Distribution, Q&A Monitoring   │
+│  - Subject Access across assigned Grades/Sections      │
+│  - Class Advisor: Pastoral oversight over section      │
+└───────────────────────────┬────────────────────────────┘
+                            │
+┌───────────────────────────▼────────────────────────────┐
+│                       3. Student                       │
+│  - Enrolled in specific Grade (e.g. Class 10) & Section│
+│  - Strictly grade-restricted Q&A (enforce_grade)       │
+│  - View own progress, ask questions, join via code     │
+└───────────────────────────┬────────────────────────────┘
+                            │
+┌───────────────────────────▼────────────────────────────┐
+│                  4. Parent / Guardian                  │
+│  - Read-only oversight of linked student's activity    │
+│  - Safety alerts, flagged queries, parental toggles    │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Detailed Permissions Matrix
+| Action / Resource | Super Admin / Org Admin | Primary Teacher / Class Advisor | Subject Lecturer (Co-Teacher) | Student | Parent / Guardian |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Create Institution / Onboard** | Full Control | No | No | No | No |
+| **Create / Delete Class & Section** | Full Control | Cannot Delete Section | Cannot Delete Section | No | No |
+| **Generate Teacher Invite Link** | Full Control | Allowed if authorized | No | No | No |
+| **Generate Student Invite Link/Code** | Full Control | Full Control | Full Control | No | No |
+| **Archive / Restore Class** | Full Control | Full Control | Read-Only | No | No |
+| **View Student Roster** | Institution-Wide | Section-Wide | Assigned Subjects | Section Peers | Linked Child Only |
+| **Ask Assistant (Curriculum Q&A)** | All Grades | All Grades / Subjects | Assigned Subjects/Grades | **Strict Grade Enforced** | Oversight Only |
+| **Access Parental Safety & Alerts** | Domain Audit | Section Safety Log | Subject Safety Log | No | **Linked Child Only** |
+| **Transfer Ownership** | Yes | Yes (To Co-Teacher) | No | No | No |
+
+---
+
+## Features Discovered
+
+The following features were discovered by probing Google Classroom API v1, Google Workspace for Education Directory API, and the target NCERT architecture specifications:
+
+| # | Category | Feature | Description | Inputs | Outputs | Error Behavior | Discovered Via |
+|---|----------|---------|-------------|--------|---------|----------------|----------------|
+| 1 | Tenancy | Domain Isolation | Isolates users, courses, and resources within an institutional domain boundary | `domain`, `customerId` | Tenant Context | 403 Forbidden for cross-tenant unauthorized requests | Workspace Admin Directory API |
+| 2 | Tenancy | Organizational Units (OUs) | Hierarchical tree grouping users for targeted feature permissions (e.g. allow course creation for faculty only) | `orgUnitPath` (`/Teachers`, `/Students`) | Inherited OU Policy | Policy bypass rejection | Workspace Directory API |
+| 3 | Tenancy | Demo / Verification ID | Validates institution onboarding registration code without needing public DNS TXT records | `institution_name`, `demo_code` | Verified Institution entity | 400 Bad Request if code invalid or already claimed | Classroom Staging / Demo Provisioning Spec |
+| 4 | Courses | Course Resource Model | Defines classroom container with name, section, description, and room | `name`, `section`, `room`, `ownerId` | `Course` JSON object with generated `id` | 400 Bad Request on missing mandatory fields | Google Classroom API v1 `courses.create` |
+| 5 | Courses | Course Lifecycle States | Manages course state transitions: PROVISIONED, ACTIVE, ARCHIVED, DECLINED | `courseState` enum | Updated state | 400 on invalid state transition; 403 if non-owner archives | Google Classroom API v1 `courses.patch` |
+| 6 | Courses | Read-Only Archival | Prevents new submissions, questions, or modifications while retaining historical audit records | Target course ID | `ARCHIVED` state | 400 when attempting to enroll students into archived course | Google Classroom API v1 Course State Engine |
+| 7 | Invites | Short Alphanumeric Join Code | Generates 6-8 char code for self-serve student enrollment (`enrollmentCode`) | Course creation / reset trigger | `enrollmentCode` string (e.g., `x7k9p2`) | Cannot be modified manually via API update | Google Classroom API v1 `Course.enrollmentCode` |
+| 8 | Invites | Direct Enrollment URL (`cjc`) | Student invite URL embedding the course join code as query parameter | `courseId`, `cjc` query param | Direct join confirmation screen | 404 or 400 if `cjc` is disabled or invalid | Google Classroom Web App URL Pattern |
+| 9 | Invites | Role-Specific Teacher Invite | Dedicated, authenticated invitation mechanism for teachers (prevents unauthorized privilege escalation) | `courseId`, `userId`, `role=TEACHER` | `Invitation` object | 403 if sender is not teacher/admin; 409 if already invited | Google Classroom API v1 `invitations.create` |
+| 10 | Invites | Cryptographic Invite Tokens | Signed token encoding role, institution, grade, and section with expiration and usage count | Token payload (`sub`, `role`, `inst_id`, `exp`) | HMAC-SHA256 signed JWT | 401 if expired, signature invalid, or max uses exceeded | NCERT PyJWT Invite Architecture Spec |
+| 11 | Invites | Anonymous-to-Auth Onboarding | Preserves invite link parameters across registration/login flow before redemption | Stored invite token in sessionStorage / URL | Auto-enrollment post-authentication | Graceful redirect to login with return URL | Web Authentication Workflow Pattern |
+| 12 | Roster | Primary Teacher / Class Owner | Assigns single owner user ID with exclusive deletion and ownership transfer capabilities | `ownerId` | Owner privileges | 403 if non-owner attempts class deletion or transfer | Google Classroom API v1 `Course.ownerId` |
+| 13 | Roster | Co-Teacher Delegation | Permits multiple instructors to co-manage curriculum and monitor students without class destruction rights | `courseId`, `userId` | `Teacher` record | 400 if limit (50 co-teachers) exceeded | Google Classroom API v1 `courses.teachers` |
+| 14 | Roster | Class Advisor Designation | Designates lead teacher (homeroom teacher) in charge of section pastoral care and overall performance | `section_id`, `lecturer_id` | `class_advisor` assignment flag | 409 if section already has an active class advisor | Indian NCERT / CBSE School Administration Standard |
+| 15 | Roster | Lecturer Subject Tags | Associates teachers with specific subjects taught (e.g., Science, Mathematics, English) | `subject_tags: ["Science", "Math"]` | `LecturerProfile` entity | 422 if subject tags invalid | NCERT Multi-Disciplinary Curriculum Model |
+| 16 | Roster | Student Enrollment Roster | Tracks enrolled students per section, creation timestamp, and active status | `courseId`, `studentId` | `Student` record & Drive work folder | 409 if student already enrolled in class | Google Classroom API v1 `courses.students` |
+| 17 | RBAC | Institution Admin RBAC | Highest tenant privilege: manages classes, sections, lecturers, rosters, and institution metadata | Admin JWT claim (`role: org_admin`) | Admin dashboard access | 403 Forbidden for non-admin tokens | Google Workspace Delegated Administration |
+| 18 | RBAC | Lecturer Multi-Grade Authorization | Allows teachers to access curriculum and Q&A across their tagged subjects without student grade block | Lecturer JWT claim (`role: lecturer`) | Bypasses single-grade constraint for authorized subjects | 403 Forbidden if querying subjects outside assignment | NCERT Pedagogical Authorization Matrix |
+| 19 | RBAC | Student Strict Grade Isolation | Restricts students to only access NCERT textbooks and RAG Q&A for their enrolled class | Student JWT claim (`role: student`, `grade: 10`) | Class 10 queries allowed | 403 Forbidden (`enforce_grade`) on cross-grade queries | NCERT Auth Dependency (`app/auth/dependencies.py:114`) |
+| 20 | RBAC | Guardian Monitoring Access | Links parents to student records with PIN-based authentication for safety oversight | Parent session token (`tok_par_...`) | Chat history & flagged query access | 401 Unauthorized if PIN incorrect or session expired | NCERT Parental Controls (`app/parental/auth.py`) |
+| 21 | UI | Student Institution Header | Displays current institution name in student header/sidebar or prompts "Join your Institution" | User session with `institution_name` | Topbar badge / Join action | Renders clean unlinked state when null | Vite + React UI Client Spec |
+| 22 | UI | Admin Institution Console | Dashboard for managing classes, sections, generating invite URLs, and viewing rosters | Admin auth token | Management dashboard components | 403 Redirect if user lacks admin role | Vite + React Admin Console Spec |
+
+---
+
+## Edge Cases
+
+| # | Feature | Input / Trigger Condition | Observed Behavior & Authoritative Handling |
+|---|---------|---------------------------|--------------------------------------------|
+| 1 | Student Join Code | Student inputs join code for an `ARCHIVED` course | **Error 400 Bad Request**: Course is archived. New student enrollments are rejected; students cannot join read-only archival classes. |
+| 2 | Invite Token Expiration | Student or lecturer clicks invite URL after `expires_at` timestamp | **Error 401 / 410 Gone**: Token has expired. User is informed: "This invitation link has expired. Please contact your school administrator for a new invite." |
+| 3 | Max Uses Exhausted | Multi-use invite link reaches `uses_count >= max_uses` | **Error 400 Bad Request**: Enrollment link capacity reached. Further sign-ups are rejected until the admin issues a new token or increases the cap. |
+| 4 | Duplicate Enrollment | Student attempts to join a section they are already enrolled in | **Error 409 Conflict** (or idempotent 200 OK): System detects existing enrollment, prevents duplicate roster records, and redirects to class view. |
+| 5 | Cross-Tenant Leak | User authenticated in Institution A clicks invite link for Institution B | **Error 403 Forbidden**: System prevents multi-tenant collision. Prompts user: "You are currently signed into School A. Switch accounts or request a transfer to join School B." |
+| 6 | Teacher Privilege Escalation | User attempts to redeem a Lecturer invite link using an existing Student account without admin authorization | **Role Conflict**: System enforces explicit role transition policy. Either requires admin approval, or re-provisions account role with audit log. A student cannot arbitrarily become a teacher. |
+| 7 | Revoked Invite Code | Admin resets or regenerates the class join code while an old link is in circulation | **Error 404 / 400**: Previous `enrollmentCode` is invalidated immediately. Any user using the old code is blocked with "Invalid class code." |
+| 8 | Class Advisor Collision | Admin assigns Lecturer B as Class Advisor for Section A when Lecturer A is already assigned | **Validation Error 409**: A section can only have one primary Class Advisor at a time. The system requires explicitly replacing or unassigning the incumbent. |
+| 9 | Grade Mismatch in Student Invite | Student enrolled in Grade 10 clicks an invite link for a Grade 8 Section | **Validation Warning / Error 400**: In NCERT school settings, a student belongs to one primary grade. Cross-grade enrollment requires explicit grade migration. |
+| 10 | Anonymous User with Invite Link | Unauthenticated visitor opens signed invite URL | **Deferred Token Flow**: Frontend stores invite token in `sessionStorage`, displays register/login page with pre-filled institution info. After authentication, automatically completes enrollment. |
+| 11 | Deactivated Institution | User attempts to log in or access classes of an institution flagged `is_active: false` | **Error 403 Forbidden**: Institution account suspended. All course Q&A and roster access is disabled until restored by Super Admin. |
+| 12 | Missing Grade Claim in JWT | Legacy student token lacking `grade` claim arrives at `/api/ask` | **Fallback / TokenError 401**: `enforce_grade` safely rejects token (`detail="Token is missing the student grade"`), prompting token refresh. |
+
+---
+
+## 3. Architectural Translation for NCERT Textbook Assistant
+
+### 3.1 Mapping Google Classroom Enterprise Patterns to Lightweight NCERT Stack
+
+Google Classroom relies on massive enterprise microservices (Google Workspace Directory, Google Drive API, Google Calendar API, Cloud Pub/Sub, and Google Accounts OAuth2). For the **NCERT Textbook Assistant**, we translate these patterns into a **lightweight, robust, self-contained architecture**:
+
+| Google Classroom Enterprise Pattern | NCERT Assistant Lightweight Translation | Implementation Technology |
+| :--- | :--- | :--- |
+| **Workspace Customer Domain** | **`institutions` Table** (name, code, demo_id, is_active) | SQLite / SQLAlchemy or structured atomic JSON |
+| **Course & Section Entity** | **`classes` & `sections` Relational Tables** | Class (Grade 1-12) -> Section (A, B, C) |
+| **OU Policy Engine** | **Tiered Roles in User Model & JWT Claims** | `role: "org_admin" \| "lecturer" \| "student"` |
+| **Directory API User Provisioning** | **Role-Specific Invite Tokens (`invitations` Table)** | Cryptographically signed PyJWT or random secure hex token |
+| **Primary Teacher / Co-Teachers** | **`lecturer_profiles` & `class_advisors` Table** | Subject tags (`["Science", "Math"]`) & Advisor flag |
+| **Course Roster (`courses.students`)** | **`enrollments` Table** (user_id, section_id, enrolled_at) | Many-to-Many binding User to Section |
+| **Grade Authorization Boundary** | **FastAPI Middleware `enforce_grade`** | Preserves Class 10 isolation while allowing teachers multi-grade access |
+| **Classroom Web UI** | **Vite + React Modular UI Components** | Admin Portal, Teacher Tags, Student Header Badge |
+
+---
+
+### 3.2 Target Relational Data Models
+
+To ensure high data integrity, transactional safety, and eliminate file-locking bottlenecks, a relational model via **SQLite / SQLAlchemy** is strongly recommended:
+
+```
+┌─────────────────────────────────┐
+│          institutions           │
+├─────────────────────────────────┤
+│ id: VARCHAR(36) [PK]            │
+│ name: VARCHAR(150)              │
+│ demo_code: VARCHAR(50) [UNIQUE] │
+│ is_active: BOOLEAN              │
+│ created_at: DATETIME            │
+└───────────────┬─────────────────┘
+                │ 1
+                │
+                │ *
+┌───────────────▼─────────────────┐
+│             classes             │
+├─────────────────────────────────┤
+│ id: VARCHAR(36) [PK]            │
+│ institution_id: VARCHAR(36)[FK] │
+│ grade: INTEGER (1-12)           │
+│ name: VARCHAR(50) (e.g. "Gr 10")│
+└───────────────┬─────────────────┘
+                │ 1
+                │
+                │ *
+┌───────────────▼─────────────────┐       ┌─────────────────────────────────┐
+│            sections             │       │              users              │
+├─────────────────────────────────┤       ├─────────────────────────────────┤
+│ id: VARCHAR(36) [PK]            │       │ id: VARCHAR(36) [PK]            │
+│ class_id: VARCHAR(36) [FK]      │       │ username: VARCHAR(50) [UNIQUE]  │
+│ name: VARCHAR(20) (e.g. "Sec A")│       │ role: VARCHAR(20)               │
+│ class_advisor_id: VARCHAR(36)   ├───────┤ institution_id: VARCHAR(36)     │
+└───────────────┬─────────────────┘       │ grade: INTEGER (Nullable)       │
+                │ 1                       └────────────────┬────────────────┘
+                │                                          │ 1
+                │ *                                        │
+┌───────────────▼─────────────────┐                        │ 1
+│           enrollments           │                        │
+├─────────────────────────────────┤                        │
+│ id: VARCHAR(36) [PK]            │                        │
+│ user_id: VARCHAR(36) [FK]       ├────────────────────────┘
+│ section_id: VARCHAR(36) [FK]    │
+│ enrolled_at: DATETIME           │
+└─────────────────────────────────┘
+
+┌─────────────────────────────────┐       ┌─────────────────────────────────┐
+│           invitations           │       │        lecturer_profiles        │
+├─────────────────────────────────┤       ├─────────────────────────────────┤
+│ id: VARCHAR(36) [PK]            │       │ user_id: VARCHAR(36) [PK, FK]   │
+│ token: VARCHAR(64) [UNIQUE]     │       │ subject_tags: JSON / TEXT       │
+│ role: VARCHAR(20) (teach/stud)  │       │ department: VARCHAR(100)        │
+│ institution_id: VARCHAR(36)     │       │ is_class_advisor: BOOLEAN       │
+│ class_id: VARCHAR(36)           │       └─────────────────────────────────┘
+│ section_id: VARCHAR(36)         │
+│ max_uses: INTEGER               │
+│ uses_count: INTEGER             │
+│ expires_at: DATETIME            │
+│ is_revoked: BOOLEAN             │
+└─────────────────────────────────┘
+```
+
+---
+
+### 3.3 PyJWT Token Extension & Backward Compatibility
+
+Existing access tokens generated in `app/auth/jwt_handler.py` have the following shape:
+```json
+{
+  "sub": "usr_a1b2c3d4",
+  "username": "ravi",
+  "grade": 10,
+  "type": "access",
+  "iat": 1730000000,
+  "exp": 1730001800,
+  "jti": "acc_abc123"
+}
+```
+
+#### Extended Token Payload (100% Backward Compatible)
+```json
+{
+  "sub": "usr_a1b2c3d4",
+  "username": "ravi",
+  "grade": 10,
+  "role": "student",
+  "institution_id": "inst_dps_01",
+  "institution_name": "Delhi Public School",
+  "section_id": "sec_10a_01",
+  "subject_tags": null,
+  "type": "access",
+  "iat": 1730000000,
+  "exp": 1730001800,
+  "jti": "acc_abc123"
+}
+```
+
+#### Lecturer Token Example
+```json
+{
+  "sub": "usr_teach_sharma",
+  "username": "dr_sharma",
+  "grade": null,
+  "role": "lecturer",
+  "institution_id": "inst_dps_01",
+  "institution_name": "Delhi Public School",
+  "section_id": null,
+  "subject_tags": ["Science", "Physics"],
+  "type": "access",
+  "iat": 1730000000,
+  "exp": 1730001800,
+  "jti": "acc_xyz789"
+}
+```
+
+#### Backward Compatibility Rule
+In `app/auth/dependencies.py`:
+- If `role` is not present, default to `"student"`.
+- In `enforce_grade(user, requested_grade)`:
+  - If `user.get("role") in ("org_admin", "lecturer")` or `user.get("is_parent")`: bypass single-grade restriction.
+  - If `user.get("role") == "student"`: enforce that `int(user["grade"]) == int(requested_grade)`.
+  This ensures that all existing student Q&A and safety checks continue functioning without disruption.
+
+---
+
+### 3.4 Key API Endpoints Specification
+
+1. **Institution Onboarding (`POST /api/institution/create`)**:
+   - Request: `{"name": "Delhi Public School", "demo_code": "NCERT-DEMO-2026"}`
+   - Action: Validates `demo_code`, provisions institution, assigns current user as `org_admin`.
+2. **Class & Section Creation (`POST /api/institution/{id}/classes`)**:
+   - Request: `{"grade": 10, "section_name": "A"}`
+   - Action: Creates Class 10 and Section A under the institution.
+3. **Role-Specific Invite Link Generation (`POST /api/institution/{id}/invites`)**:
+   - Request: `{"role": "lecturer" | "student", "class_id": "...", "section_id": "...", "max_uses": 50, "expires_days": 14}`
+   - Response: `{"invite_url": "https://ncert.app/join?token=inv_9x8k...", "token": "inv_9x8k..."}`
+4. **Accept Invite (`POST /api/institution/invites/accept`)**:
+   - Request: `{"token": "inv_9x8k..."}`
+   - Action: Validates token expiration and usage limit, attaches user to institution, updates role, records enrollment, returns refreshed JWT.
+5. **Lecturer Profile & Subject Tags (`PUT /api/institution/lecturers/{user_id}/profile`)**:
+   - Request: `{"subject_tags": ["Science", "Mathematics"], "is_class_advisor": true, "advisor_section_id": "sec_10a"}`
+   - Action: Updates lecturer metadata and assigns Class Advisor role.
+
+---
+
+### 3.5 UI/UX Blueprint for Vite + React (`ui-client`)
+
+- **Student Header (`ui-client/src/App.jsx`)**:
+  - If `user.institution_name`: Displays sleek badge `🏫 Delhi Public School (Class 10-A)` in the top bar.
+  - If `!user.institution_name`: Displays an interactive button `🔗 Join your Institution` opening a lightweight modal to input an invite code or click an invite link.
+- **Admin Management Portal**:
+  - Modal or dedicated view for Org Admins:
+    - Tab 1: Institution Details & Demo Code status.
+    - Tab 2: Classes & Sections tree (Class 10 -> Sec A, Sec B).
+    - Tab 3: One-click "Copy Lecturer Invite Link" and "Copy Student Invite Link".
+    - Tab 4: Student & Lecturer Roster table with Class Advisor badges.
+- **Lecturer Interface**:
+  - Shows assigned subject tags (e.g., `Science`, `English`).
+  - Highlights Class Advisor status with a badge `⭐ Class Advisor: 10-A`.
+
+---
+
+## 5-Component Handoff Report
+
+### 1. Observation
+1. **Existing Auth Architecture**:
+   - Inspection of `app/auth/models.py` (lines 31-45, 71-109) confirms users are currently stored in `storage/users.json` with fields `id`, `username`, `grade`, `password_salt`, `password_hash`, `is_active`, and timestamps.
+   - Inspection of `app/auth/jwt_handler.py` (lines 38-71, 108-133) confirms access tokens are HS256-signed JWTs carrying `sub`, `username`, `grade`, `type`, `iat`, `exp`, and `jti`.
+   - Inspection of `app/auth/dependencies.py` (lines 37-91, 114-138) reveals that token validation extracts `grade` and assigns `user["role"] = "student"` or `user["role"] = "parent"` (via `app/parental/auth.py`). The `enforce_grade(user, requested_grade)` function strictly limits students to their enrolled grade.
+2. **Google Classroom Public API Specifications**:
+   - The authoritative Google Classroom API v1 (`/v1/courses`, `/v1/invitations`) defines distinct lifecycle states (`PROVISIONED`, `ACTIVE`, `ARCHIVED`), separation of class name and section name, read-only `enrollmentCode` generation, and separate invitation endpoints for `TEACHER` and `STUDENT` roles.
+   - Google Workspace Directory API isolates users by domain and manages course creation privileges via Organizational Units (OUs).
+
+### 2. Logic Chain
+1. From Observation 1, the NCERT Textbook Assistant currently treats all registered users as students with a mandatory single `grade` (1-12), while parents authenticate out-of-band via parental PINs.
+2. From Observation 2, Google Classroom's enterprise security requires strict role segregation: teacher invitations cannot use public join codes because anyone with a student join code would otherwise gain teacher privileges.
+3. Therefore, to implement multi-tier RBAC (Admin -> Lecturer -> Student) for NCERT Assistant without breaking existing student workflows:
+   - The user data model must support `role` (`org_admin`, `lecturer`, `student`) and optional `institution_id`.
+   - The JWT generator must encode `role`, `institution_id`, `institution_name`, and optional `subject_tags` in addition to `grade`.
+   - The invitation system must generate **two distinct token types**: dedicated signed Lecturer invite links and Student invite links/codes.
+   - `enforce_grade` in `app/auth/dependencies.py` must grant multi-grade access to Lecturers and Org Admins while maintaining strict grade isolation for Students.
+
+### 3. Caveats
+- Google Classroom provides automated Google Drive folder provisioning for course submissions; for the NCERT Textbook Assistant, Google Drive is not used, as textbook Q&A runs over local indexed RAG vector stores.
+- Flat-file JSON (`storage/users.json`) has been used up to this point; while functional for single-node development, migrating to a lightweight SQLite database is strongly advised to prevent race conditions during concurrent multi-user invite redemptions.
+
+### 4. Conclusion
+Google Classroom's enterprise patterns map cleanly onto a lightweight, production-ready architecture for the NCERT Textbook Assistant. By extending PyJWT claims, establishing an `invitations` table with role-specific link generation, creating Class/Section relational entities, and updating `enforce_grade`, the system can achieve full multi-tenant school onboarding and multi-tier RBAC with complete stability and backwards compatibility.
+
+### 5. Verification Method
+1. **Verify Existing Auth Behavior**:
+   - Inspect `app/auth/jwt_handler.py` and run existing auth tests to confirm token generation and validation.
+2. **Verify Field & Schema Compatibility**:
+   - Inspect `app/auth/schemas.py` and `app/auth/dependencies.py` to confirm that extending JWT claims does not alter `enforce_grade` logic for existing students.
+3. **Verify API Contract Alignment**:
+   - Verify that all endpoints specified in Section 3.4 adhere to FastAPI Pydantic v2 schemas and HTTP status code standards (200, 201, 400, 401, 403, 404, 409).
+4. **Invalidation Conditions**:
+   - If user requirements dictate using only flat-file JSON without SQLite, the entity schema must be adapted into a thread-safe JSON dictionary model (similar to `storage/users.json`).

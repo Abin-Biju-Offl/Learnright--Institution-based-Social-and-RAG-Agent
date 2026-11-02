@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Login — NCERT Textbook Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(18, 24, 38, 0.85);
+      --border: rgba(255, 255, 255, 0.1);
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --error: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: radial-gradient(circle at 50% 10%, #1e1b4b 0%, var(--bg) 70%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 440px;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      padding: 2.25rem;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+    }
+    .brand-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .brand-icon {
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      margin-bottom: 0.75rem;
+      box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+    }
+    .brand-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand-sub {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+    }
+    .tabs {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 0.75rem;
+      padding: 4px;
+      margin-bottom: 1.75rem;
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 0.6rem;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.875rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    }
+    .form-group {
+      margin-bottom: 1.2rem;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    input, select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      color: var(--text);
+      font-size: 0.95rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    }
+    .btn-submit {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 0.75rem;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.2s;
+      margin-top: 0.5rem;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+    }
+    .btn-submit:hover { opacity: 0.95; transform: translateY(-1px); }
+    .btn-submit:active { transform: translateY(0); }
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      margin-bottom: 1.25rem;
+      display: none;
+    }
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+    .alert-success {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+    }
+    .grade-badge-notice {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px dashed rgba(59, 130, 246, 0.3);
+      padding: 0.65rem 0.85rem;
+      border-radius: 0.5rem;
+      font-size: 0.8rem;
+      color: #93c5fd;
+      margin-top: 0.4rem;
+      line-height: 1.4;
+    }
+    .footer-link {
+      text-align: center;
+      margin-top: 1.75rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .footer-link a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .footer-link a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="auth-card">
+    <div class="brand-header">
+      <div class="brand-icon">📚</div>
+      <h1 class="brand-title">NCERT Student Portal</h1>
+      <p class="brand-sub">Authenticate to access your curriculum textbooks</p>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">Sign In</button>
+      <button class="tab-btn" id="tab-register" onclick="switchTab('register')">Register Student</button>
+    </div>
+
+    <div id="alert-box" class="alert"></div>
+
+    <!-- Login Form -->
+    <form id="form-login" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label for="login-username">Username</label>
+        <input type="text" id="login-username" required placeholder="e.g. rahul10" autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" required placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn-submit" id="btn-login-submit">Sign In as Student</button>
+    </form>
+
+    <!-- Register Form -->
+    <form id="form-register" style="display: none;" onsubmit="handleRegister(event)">
+      <div class="form-group">
+        <label for="reg-username">Student Username</label>
+        <input type="text" id="reg-username" required placeholder="e.g. ananya10" pattern="^[a-zA-Z0-9_]{3,30}$" title="3-30 letters, numbers, or underscores" autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label for="reg-grade">Enrolled Class (Grade)</label>
+        <select id="reg-grade" required>
+          <option value="10" selected>Class 10 (Secondary Board)</option>
+          <option value="5">Class 5 (Primary)</option>
+          <option value="1">Class 1</option>
+          <option value="2">Class 2</option>
+          <option value="3">Class 3</option>
+          <option value="4">Class 4</option>
+          <option value="6">Class 6</option>
+          <option value="7">Class 7</option>
+          <option value="8">Class 8</option>
+          <option value="9">Class 9</option>
+          <option value="11">Class 11</option>
+          <option value="12">Class 12</option>
+        </select>
+        <div class="grade-badge-notice">
+          🔒 <strong>Class Isolation Active:</strong> You will strictly receive access to textbooks for your enrolled class only.
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="reg-fullname">Full Name (Optional)</label>
+        <input type="text" id="reg-fullname" placeholder="e.g. Ananya Sen" />
+      </div>
+      <div class="form-group">
+        <label for="reg-password">Password</label>
+        <input type="password" id="reg-password" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" />
+      </div>
+      <button type="submit" class="btn-submit" id="btn-reg-submit">Create Student Account</button>
+    </form>
+
+    <div class="footer-link">
+      <a href="/">← Return to NCERT Assistant</a>
+    </div>
+  </div>
+
+  <script>
+    function showAlert(msg, isError = true) {
+      const box = document.getElementById("alert-box");
+      box.textContent = msg;
+      box.className = "alert " + (isError ? "alert-error" : "alert-success");
+      box.style.display = "block";
+    }
+
+    function switchTab(mode) {
+      document.getElementById("alert-box").style.display = "none";
+      const isLogin = mode === 'login';
+      document.getElementById("tab-login").classList.toggle("active", isLogin);
+      document.getElementById("tab-register").classList.toggle("active", !isLogin);
+      document.getElementById("form-login").style.display = isLogin ? "block" : "none";
+      document.getElementById("form-register").style.display = isLogin ? "none" : "block";
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const btn = document.getElementById("btn-login-submit");
+      btn.disabled = true;
+      btn.textContent = "Verifying...";
+      try {
+        const username = document.getElementById("login-username").value.trim();
+        const password = document.getElementById("login-password").value;
+
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Login failed.");
+        }
+
+        // Store tokens & user
+        localStorage.setItem("student_token", data.access_token);
+        localStorage.setItem("student_refresh_token", data.refresh_token);
+        localStorage.setItem("student_user", JSON.stringify(data.user));
+
+        showAlert(`Welcome Class ${data.user.grade} Student! Redirecting...`, false);
+        setTimeout(() => { window.location.href = "/"; }, 800);
+      } catch (err) {
+        showAlert(err.message, true);
+        btn.disabled = false;
+        btn.textContent = "Sign In as Student";
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      const btn = document.getElementById("btn-reg-submit");
+      btn.disabled = true;
+      btn.textContent = "Creating Account...";
+      try {
+        const username = document.getElementById("reg-username").value.trim();
+        const grade = parseInt(document.getElementById("reg-grade").value, 10);
+        const fullName = document.getElementById("reg-fullname").value.trim() || null;
+        const password = document.getElementById("reg-password").value;
+
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, grade, full_name: fullName, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Registration failed.");
+        }
+
+        // Store tokens & user
+        localStorage.setItem("student_token", data.access_token);
+        localStorage.setItem("student_refresh_token", data.refresh_token);
+        localStorage.setItem("student_user", JSON.stringify(data.user));
+
+        showAlert(`Account created for Class ${data.user.grade}! Redirecting...`, false);
+        setTimeout(() => { window.location.href = "/"; }, 800);
+      } catch (err) {
+        showAlert(err.message, true);
+        btn.disabled = false;
+        btn.textContent = "Create Student Account";
+      }
+    }
+  </script>
+</body>
+</html>
+
