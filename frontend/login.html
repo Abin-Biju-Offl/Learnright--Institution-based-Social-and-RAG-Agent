@@ -2,334 +2,971 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Student Login — NCERT Textbook Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Sign in — Learnright</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    /* ═══════════════════════════════════════════════════════════════════
+       Design Tokens — Apple / iOS SF Pro System + Gemini Obsidian Dark
+       ═══════════════════════════════════════════════════════════════════ */
     :root {
-      --bg: #0b0f19;
-      --card-bg: rgba(18, 24, 38, 0.85);
-      --border: rgba(255, 255, 255, 0.1);
-      --accent: #3b82f6;
-      --accent-hover: #2563eb;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --success: #10b981;
-      --error: #ef4444;
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
+
+      --bg: #131314;
+      --surface: #1e1f20;
+      --surface-subtle: #18191b;
+      --surface-elevated: #282a2d;
+
+      --text: #f0f2f5;
+      --text-muted: #9aa0a6;
+      --text-dim: #70757a;
+
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.16);
+      --border-focus: rgba(138, 180, 248, 0.6);
+
+      --accent: #8ab4f8;
+      --accent-hover: #aecbfa;
+      --accent-brand: #8b5cf6;
+      --accent-brand-light: #c084fc;
+
+      --danger: #f28b82;
+      --danger-bg: rgba(242, 139, 130, 0.12);
+      --danger-border: rgba(242, 139, 130, 0.28);
+
+      --success: #81c995;
+      --success-bg: rgba(129, 201, 149, 0.12);
+      --success-border: rgba(129, 201, 149, 0.28);
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      background: var(--bg);
+      color: var(--text);
+    }
+
     body {
-      font-family: 'Inter', -apple-system, sans-serif;
-      background: radial-gradient(circle at 50% 10%, #1e1b4b 0%, var(--bg) 70%);
-      color: var(--text);
-      min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 1.5rem;
+      padding: calc(env(safe-area-inset-top, 20px) + 24px) 16px calc(env(safe-area-inset-bottom, 20px) + 24px);
+      position: relative;
+      overflow-x: hidden;
+      background: radial-gradient(circle at 50% 18%, rgba(139, 92, 246, 0.14) 0%, rgba(19, 19, 20, 0.98) 55%, var(--bg) 100%);
     }
-    .auth-card {
+
+    /* Ambient glow wash */
+    .ambient-glow {
+      position: absolute;
+      width: 560px;
+      height: 560px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, rgba(138, 180, 248, 0.08) 42%, transparent 70%);
+      filter: blur(65px);
+      pointer-events: none;
+      z-index: 0;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -55%);
+      transition: transform 0.4s ease-out;
+    }
+
+    /* Main Container */
+    .auth-wrapper {
       width: 100%;
-      max-width: 440px;
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      border: 1px solid var(--border);
-      border-radius: 1.25rem;
-      padding: 2.25rem;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
-    }
-    .brand-header {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-    .brand-icon {
-      width: 52px;
-      height: 52px;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      border-radius: 14px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 26px;
-      margin-bottom: 0.75rem;
-      box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
-    }
-    .brand-title {
-      font-size: 1.35rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .brand-sub {
-      color: var(--text-muted);
-      font-size: 0.875rem;
-      margin-top: 0.25rem;
-    }
-    .tabs {
+      max-width: 420px;
+      position: relative;
+      z-index: 1;
       display: flex;
-      background: rgba(0, 0, 0, 0.35);
-      border-radius: 0.75rem;
-      padding: 4px;
-      margin-bottom: 1.75rem;
-      border: 1px solid var(--border);
-    }
-    .tab-btn {
-      flex: 1;
-      padding: 0.6rem;
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-weight: 600;
-      font-size: 0.875rem;
-      border-radius: 0.5rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .tab-btn.active {
-      background: var(--accent);
-      color: #fff;
-      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
-    }
-    .form-group {
-      margin-bottom: 1.2rem;
-    }
-    label {
-      display: block;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      margin-bottom: 0.4rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    input, select {
-      width: 100%;
-      padding: 0.75rem 1rem;
-      background: rgba(15, 23, 42, 0.65);
-      border: 1px solid var(--border);
-      border-radius: 0.75rem;
-      color: var(--text);
-      font-size: 0.95rem;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    input:focus, select:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
-    }
-    .btn-submit {
-      width: 100%;
-      padding: 0.85rem;
-      border: none;
-      border-radius: 0.75rem;
-      background: linear-gradient(135deg, #3b82f6, #2563eb);
-      color: white;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.15s, opacity 0.2s;
-      margin-top: 0.5rem;
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
-    }
-    .btn-submit:hover { opacity: 0.95; transform: translateY(-1px); }
-    .btn-submit:active { transform: translateY(0); }
-    .alert {
-      padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
-      font-size: 0.875rem;
-      margin-bottom: 1.25rem;
-      display: none;
-    }
-    .alert-error {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      color: #fca5a5;
-    }
-    .alert-success {
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      color: #6ee7b7;
-    }
-    .grade-badge-notice {
-      background: rgba(59, 130, 246, 0.1);
-      border: 1px dashed rgba(59, 130, 246, 0.3);
-      padding: 0.65rem 0.85rem;
-      border-radius: 0.5rem;
-      font-size: 0.8rem;
-      color: #93c5fd;
-      margin-top: 0.4rem;
-      line-height: 1.4;
-    }
-    .footer-link {
-      text-align: center;
-      margin-top: 1.75rem;
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-    .footer-link a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 500;
-    }
-    .footer-link a:hover { text-decoration: underline; }
-  </style>
-</head>
-<body>
-  <div class="auth-card">
-    <div class="brand-header">
-      <div class="brand-icon">📚</div>
-      <h1 class="brand-title">NCERT Student Portal</h1>
-      <p class="brand-sub">Authenticate to access your curriculum textbooks</p>
-    </div>
-
-    <div class="tabs">
-      <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">Sign In</button>
-      <button class="tab-btn" id="tab-register" onclick="switchTab('register')">Register Student</button>
-    </div>
-
-    <div id="alert-box" class="alert"></div>
-
-    <!-- Login Form -->
-    <form id="form-login" onsubmit="handleLogin(event)">
-      <div class="form-group">
-        <label for="login-username">Username</label>
-        <input type="text" id="login-username" required placeholder="e.g. rahul10" autocomplete="username" />
-      </div>
-      <div class="form-group">
-        <label for="login-password">Password</label>
-        <input type="password" id="login-password" required placeholder="••••••••" autocomplete="current-password" />
-      </div>
-      <button type="submit" class="btn-submit" id="btn-login-submit">Sign In as Student</button>
-    </form>
-
-    <!-- Register Form -->
-    <form id="form-register" style="display: none;" onsubmit="handleRegister(event)">
-      <div class="form-group">
-        <label for="reg-username">Student Username</label>
-        <input type="text" id="reg-username" required placeholder="e.g. ananya10" pattern="^[a-zA-Z0-9_]{3,30}$" title="3-30 letters, numbers, or underscores" autocomplete="username" />
-      </div>
-      <div class="form-group">
-        <label for="reg-grade">Enrolled Class (Grade)</label>
-        <select id="reg-grade" required>
-          <option value="10" selected>Class 10 (Secondary Board)</option>
-          <option value="5">Class 5 (Primary)</option>
-          <option value="1">Class 1</option>
-          <option value="2">Class 2</option>
-          <option value="3">Class 3</option>
-          <option value="4">Class 4</option>
-          <option value="6">Class 6</option>
-          <option value="7">Class 7</option>
-          <option value="8">Class 8</option>
-          <option value="9">Class 9</option>
-          <option value="11">Class 11</option>
-          <option value="12">Class 12</option>
-        </select>
-        <div class="grade-badge-notice">
-          🔒 <strong>Class Isolation Active:</strong> You will strictly receive access to textbooks for your enrolled class only.
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="reg-fullname">Full Name (Optional)</label>
-        <input type="text" id="reg-fullname" placeholder="e.g. Ananya Sen" />
-      </div>
-      <div class="form-group">
-        <label for="reg-password">Password</label>
-        <input type="password" id="reg-password" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" />
-      </div>
-      <button type="submit" class="btn-submit" id="btn-reg-submit">Create Student Account</button>
-    </form>
-
-    <div class="footer-link">
-      <a href="/">← Return to NCERT Assistant</a>
-    </div>
-  </div>
-
-  <script>
-    function showAlert(msg, isError = true) {
-      const box = document.getElementById("alert-box");
-      box.textContent = msg;
-      box.className = "alert " + (isError ? "alert-error" : "alert-success");
-      box.style.display = "block";
+      flex-direction: column;
+      align-items: center;
+      animation: entranceFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
 
-    function switchTab(mode) {
-      document.getElementById("alert-box").style.display = "none";
-      const isLogin = mode === 'login';
-      document.getElementById("tab-login").classList.toggle("active", isLogin);
-      document.getElementById("tab-register").classList.toggle("active", !isLogin);
-      document.getElementById("form-login").style.display = isLogin ? "block" : "none";
-      document.getElementById("form-register").style.display = isLogin ? "none" : "block";
-    }
-
-    async function handleLogin(e) {
-      e.preventDefault();
-      const btn = document.getElementById("btn-login-submit");
-      btn.disabled = true;
-      btn.textContent = "Verifying...";
-      try {
-        const username = document.getElementById("login-username").value.trim();
-        const password = document.getElementById("login-password").value;
-
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.detail || "Login failed.");
-        }
-
-        // Store tokens & user
-        localStorage.setItem("student_token", data.access_token);
-        localStorage.setItem("student_refresh_token", data.refresh_token);
-        localStorage.setItem("student_user", JSON.stringify(data.user));
-
-        showAlert(`Welcome Class ${data.user.grade} Student! Redirecting...`, false);
-        setTimeout(() => { window.location.href = "/"; }, 800);
-      } catch (err) {
-        showAlert(err.message, true);
-        btn.disabled = false;
-        btn.textContent = "Sign In as Student";
+    @keyframes entranceFade {
+      0% {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
       }
     }
 
-    async function handleRegister(e) {
-      e.preventDefault();
-      const btn = document.getElementById("btn-reg-submit");
-      btn.disabled = true;
-      btn.textContent = "Creating Account...";
-      try {
-        const username = document.getElementById("reg-username").value.trim();
-        const grade = parseInt(document.getElementById("reg-grade").value, 10);
-        const fullName = document.getElementById("reg-fullname").value.trim() || null;
-        const password = document.getElementById("reg-password").value;
+    /* Brand Header with Rich Violet Clover Bot */
+    .brand-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-bottom: 22px;
+    }
 
-        const res = await fetch("/api/auth/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, grade, full_name: fullName, password })
+    .clover-bot-wrap {
+      width: 84px;
+      height: 84px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 10px 28px rgba(139, 92, 246, 0.45));
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .clover-bot-wrap:hover {
+      transform: scale(1.08);
+    }
+
+    .clover-bot-wrap:active,
+    .clover-bot-wrap.hop-anim {
+      animation: botHop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes botHop {
+      0% { transform: scale(1); }
+      30% { transform: translateY(-14px) scale(1.08) rotate(3deg); }
+      60% { transform: translateY(2px) scale(0.96); }
+      100% { transform: translateY(0) scale(1); }
+    }
+
+    /* Enlarged Learnright Display Typography */
+    .learnright-title {
+      font-family: var(--font-display);
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.1;
+      background: linear-gradient(180deg, #ffffff 0%, #f3e8ff 45%, #c084fc 78%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 10px rgba(139, 92, 246, 0.35));
+      margin-bottom: 4px;
+    }
+
+    .auth-sub {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      max-width: 340px;
+    }
+
+    /* ── Form Card ── */
+    .auth-card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 26px 24px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(255, 255, 255, 0.03);
+      position: relative;
+    }
+
+    /* Segmented Tab Switcher (iOS Style) */
+    .segmented-control {
+      display: flex;
+      background: var(--surface-subtle);
+      padding: 3px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .seg-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      text-align: center;
+    }
+
+    .seg-btn.active {
+      background: var(--surface-elevated);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .seg-btn:hover:not(.active) {
+      color: var(--text);
+    }
+
+    /* ── Alerts ── */
+    .alert-box {
+      display: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 16px;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .alert-box.visible {
+      display: flex;
+    }
+
+    .alert-error {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: #fca5a5;
+    }
+
+    .alert-success {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      color: #86efac;
+    }
+
+    /* ── Form Fields ── */
+    .field-group {
+      margin-bottom: 15px;
+      text-align: left;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 7px;
+    }
+
+    .field-label .optional {
+      color: var(--text-dim);
+      font-weight: 400;
+      font-size: 12px;
+      margin-left: 4px;
+    }
+
+    .input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-field,
+    .select-field {
+      width: 100%;
+      height: 48px;
+      padding: 0 16px;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      color: var(--text);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      outline: none;
+      transition: all 0.18s ease;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .input-field::placeholder {
+      color: var(--text-dim);
+    }
+
+    .input-field:hover,
+    .select-field:hover {
+      border-color: var(--border-hover);
+    }
+
+    .input-field:focus,
+    .select-field:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(138, 180, 248, 0.22);
+      background: #141518;
+    }
+
+    .password-toggle-btn {
+      position: absolute;
+      right: 10px;
+      width: 34px;
+      height: 34px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .password-toggle-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .select-field {
+      padding-right: 38px;
+      cursor: pointer;
+    }
+
+    .select-arrow {
+      position: absolute;
+      right: 14px;
+      pointer-events: none;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* Notice badge */
+    .notice-pill {
+      margin-top: 6px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: rgba(138, 180, 248, 0.08);
+      border: 1px solid rgba(138, 180, 248, 0.18);
+      font-size: 12px;
+      color: #aecbfa;
+      line-height: 1.4;
+      display: flex;
+      gap: 6px;
+    }
+
+    .notice-pill.faculty-pill {
+      background: rgba(139, 92, 246, 0.1);
+      border-color: rgba(139, 92, 246, 0.26);
+      color: #d8b4fe;
+    }
+
+    /* ── Primary Action Button ── */
+    .btn-submit {
+      width: 100%;
+      height: 48px;
+      margin-top: 8px;
+      background: var(--accent);
+      color: #0b111e;
+      border: none;
+      border-radius: 12px;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 14px rgba(138, 180, 248, 0.25);
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      background: var(--accent-hover);
+      box-shadow: 0 6px 20px rgba(138, 180, 248, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .btn-submit:active:not(:disabled) {
+      transform: scale(0.985);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Form Shake on Error */
+    .shake-error {
+      animation: formShake 0.36s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    }
+
+    @keyframes formShake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+
+    /* Footer Return Link */
+    .footer-action {
+      margin-top: 22px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .footer-action a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: color 0.15s;
+    }
+
+    .footer-action a:hover {
+      color: var(--accent-hover);
+      text-decoration: underline;
+    }
+
+    .btn-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(11, 17, 30, 0.3);
+      border-top-color: #0b111e;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow" id="ambient-wash"></div>
+
+  <div class="auth-wrapper">
+    <!-- Brand Header with VIBRANT VIOLET Clover Bot & Large Learnright Display -->
+    <header class="brand-header">
+      <div class="clover-bot-wrap" id="clover-bot" title="Learnright Clover Bot (Click to hop!)">
+        <svg width="84" height="84" viewBox="0 0 36 36" fill="none">
+          <defs>
+            <!-- Vivid Plush Violet Body Gradient -->
+            <linearGradient id="clover-violet-body" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#c084fc" />
+              <stop offset="35%" stopColor="#9333ea" />
+              <stop offset="75%" stopColor="#7c3aed" />
+              <stop offset="100%" stopColor="#6d28d9" />
+            </linearGradient>
+
+            <!-- Radial Keylight / Plush Specular Highlight -->
+            <radialGradient id="clover-violet-sheen" cx="35%" cy="28%" r="62%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.65" />
+              <stop offset="42%" stopColor="#e9d5ff" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#7c3aed" stopOpacity="0" />
+            </radialGradient>
+
+            <!-- Luminous Violet Bevel Rim -->
+            <linearGradient id="clover-violet-rim" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.85" />
+              <stop offset="45%" stopColor="#e9d5ff" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#4c1d95" stopOpacity="0.9" />
+            </linearGradient>
+          </defs>
+
+          <!-- 4-Lobed Violet Plush Bot Body -->
+          <path
+            d="M18 4C21.5 4 24 6.5 24 10C27.5 10 32 12.5 32 18C32 23.5 27.5 26 24 26C24 29.5 21.5 32 18 32C14.5 32 12 29.5 12 26C8.5 26 4 23.5 4 18C4 12.5 8.5 10 12 10C12 6.5 14.5 4 18 4Z"
+            fill="url(#clover-violet-body)"
+            stroke="url(#clover-violet-rim)"
+            strokeWidth="1.3"
+          />
+          <path
+            d="M18 4C21.5 4 24 6.5 24 10C27.5 10 32 12.5 32 18C32 23.5 27.5 26 24 26C24 29.5 21.5 32 18 32C14.5 32 12 29.5 12 26C8.5 26 4 23.5 4 18C4 12.5 8.5 10 12 10C12 6.5 14.5 4 18 4Z"
+            fill="url(#clover-violet-sheen)"
+          />
+
+          <!-- Expressive Eyes with Pupil Tracking -->
+          <g id="bot-eyes">
+            <!-- Left Bead Eye -->
+            <ellipse id="eye-left" cx="14" cy="18" rx="2.5" ry="3.8" fill="#130826" />
+            <circle id="pupil-left" cx="14.8" cy="16.5" r="0.95" fill="#ffffff" opacity="0.95" />
+
+            <!-- Right Bead Eye -->
+            <ellipse id="eye-right" cx="22" cy="18" rx="2.5" ry="3.8" fill="#130826" />
+            <circle id="pupil-right" cx="22.8" cy="16.5" r="0.95" fill="#ffffff" opacity="0.95" />
+          </g>
+        </svg>
+      </div>
+
+      <h1 class="learnright-title">Learnright</h1>
+      <p class="auth-sub" id="header-sub">Curriculum textbooks, classrooms, and AI tutor</p>
+    </header>
+
+    <!-- Main Card -->
+    <main class="auth-card" id="auth-card">
+      <!-- Segmented Switcher -->
+      <nav class="segmented-control" role="tablist" aria-label="Authentication Options">
+        <button
+          type="button"
+          class="seg-btn active"
+          id="tab-signin"
+          role="tab"
+          aria-selected="true"
+          onclick="switchAuthMode('signin')"
+        >
+          Sign In
+        </button>
+        <button
+          type="button"
+          class="seg-btn"
+          id="tab-signup"
+          role="tab"
+          aria-selected="false"
+          onclick="switchAuthMode('signup')"
+        >
+          Create Account
+        </button>
+      </nav>
+
+      <!-- Alert Box -->
+      <div id="alert-box" class="alert-box" role="alert" aria-live="polite">
+        <span id="alert-icon">⚠️</span>
+        <span id="alert-message"></span>
+      </div>
+
+      <!-- ── Sign In Form ── -->
+      <form id="form-signin" onsubmit="handleSignIn(event)" novalidate>
+        <div class="field-group">
+          <label class="field-label" for="signin-username">Username</label>
+          <div class="input-wrap">
+            <input
+              type="text"
+              id="signin-username"
+              class="input-field"
+              placeholder="e.g. rahul10 or prof_sharma"
+              autocomplete="username"
+              required
+              autocapitalize="none"
+              spellcheck="false"
+            />
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="signin-password">Password</label>
+          <div class="input-wrap">
+            <input
+              type="password"
+              id="signin-password"
+              class="input-field"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              class="password-toggle-btn"
+              onclick="togglePasswordVisibility('signin-password', this)"
+              aria-label="Toggle password visibility"
+            >
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit" id="btn-signin-submit">
+          <span>Sign In</span>
+        </button>
+      </form>
+
+      <!-- ── Create Account Form (With Faculty & Admin Authorization) ── -->
+      <form id="form-signup" style="display: none;" onsubmit="handleSignUp(event)" novalidate>
+        <!-- Role Selector: Student | Faculty (Lecturer) | Org Admin -->
+        <div class="field-group">
+          <label class="field-label" for="signup-role">Authorization Role</label>
+          <div class="input-wrap">
+            <select id="signup-role" class="select-field" onchange="handleRoleChange(this.value)">
+              <option value="student" selected>Student (Curriculum &amp; Classroom Enrolled)</option>
+              <option value="lecturer">Faculty (Lecturer / Teacher &amp; Class Advisor)</option>
+              <option value="org_admin">Organization Administrator (Principal / Headmaster)</option>
+            </select>
+            <span class="select-arrow">▼</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="signup-username">Username</label>
+          <div class="input-wrap">
+            <input
+              type="text"
+              id="signup-username"
+              class="input-field"
+              placeholder="e.g. ananya10 or prof_gupta"
+              pattern="^[a-zA-Z0-9_]{3,30}$"
+              autocomplete="username"
+              required
+              autocapitalize="none"
+              spellcheck="false"
+            />
+          </div>
+        </div>
+
+        <!-- Student Grade Field -->
+        <div class="field-group" id="grade-field-group">
+          <label class="field-label" for="signup-grade">Enrolled Class (Grade)</label>
+          <div class="input-wrap">
+            <select id="signup-grade" class="select-field">
+              <option value="10" selected>Class 10 (Secondary Board)</option>
+              <option value="5">Class 5 (Primary)</option>
+              <option value="1">Class 1</option>
+              <option value="2">Class 2</option>
+              <option value="3">Class 3</option>
+              <option value="4">Class 4</option>
+              <option value="6">Class 6</option>
+              <option value="7">Class 7</option>
+              <option value="8">Class 8</option>
+              <option value="9">Class 9</option>
+              <option value="11">Class 11</option>
+              <option value="12">Class 12</option>
+            </select>
+            <span class="select-arrow">▼</span>
+          </div>
+          <div class="notice-pill">
+            <span>🔒</span>
+            <span>Grade-enforced access: You will receive answers grounded in your enrolled textbooks.</span>
+          </div>
+        </div>
+
+        <!-- Faculty Subjects Field -->
+        <div class="field-group" id="faculty-field-group" style="display: none;">
+          <label class="field-label" for="signup-subjects">
+            Teaching Subjects <span class="optional">(Comma separated)</span>
+          </label>
+          <div class="input-wrap">
+            <input
+              type="text"
+              id="signup-subjects"
+              class="input-field"
+              placeholder="e.g. Science, Physics, Mathematics"
+            />
+          </div>
+          <div class="notice-pill faculty-pill">
+            <span>🎓</span>
+            <span>Faculty Authorization: Multi-grade textbook RAG, class advisor tools, and student roster access.</span>
+          </div>
+        </div>
+
+        <!-- Admin Notice Pill -->
+        <div class="field-group" id="admin-field-group" style="display: none;">
+          <div class="notice-pill">
+            <span>🏛️</span>
+            <span>Administrator Authorization: School institution creation, class hierarchy, and role-specific invites.</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="signup-fullname">
+            Full Name <span class="optional">(Optional)</span>
+          </label>
+          <div class="input-wrap">
+            <input
+              type="text"
+              id="signup-fullname"
+              class="input-field"
+              placeholder="e.g. Dr. Ananya Sen"
+              autocomplete="name"
+            />
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="signup-password">Password</label>
+          <div class="input-wrap">
+            <input
+              type="password"
+              id="signup-password"
+              class="input-field"
+              placeholder="At least 6 characters"
+              minlength="6"
+              autocomplete="new-password"
+              required
+            />
+            <button
+              type="button"
+              class="password-toggle-btn"
+              onclick="togglePasswordVisibility('signup-password', this)"
+              aria-label="Toggle password visibility"
+            >
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit" id="btn-signup-submit">
+          <span>Create Account</span>
+        </button>
+      </form>
+    </main>
+
+    <!-- Return Link -->
+    <footer class="footer-action">
+      <a href="/">
+        <span>←</span>
+        <span>Return to Learnright</span>
+      </a>
+    </footer>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════════
+    // Interactive Clover Bot & Eye Tracking (The "Signature Move")
+    // ═══════════════════════════════════════════════════════════════════
+    const botWrap = document.getElementById('clover-bot');
+    const leftPupil = document.getElementById('pupil-left');
+    const rightPupil = document.getElementById('pupil-right');
+    const ambientWash = document.getElementById('ambient-wash');
+    let isPasswordFocused = false;
+
+    // Follow cursor smoothly
+    window.addEventListener('mousemove', (e) => {
+      if (ambientWash) {
+        const moveX = (e.clientX / window.innerWidth - 0.5) * 44;
+        const moveY = (e.clientY / window.innerHeight - 0.5) * 44;
+        ambientWash.style.transform = `translate(calc(-50% + ${moveX}px), calc(-55% + ${moveY}px))`;
+      }
+
+      if (isPasswordFocused || !botWrap || !leftPupil || !rightPupil) return;
+      const rect = botWrap.getBoundingClientRect();
+      const botCenterX = rect.left + rect.width / 2;
+      const botCenterY = rect.top + rect.height / 2;
+
+      const angle = Math.atan2(e.clientY - botCenterY, e.clientX - botCenterX);
+      const dist = Math.min(2.2, Math.hypot(e.clientX - botCenterX, e.clientY - botCenterY) / 110);
+
+      const dx = Math.cos(angle) * dist;
+      const dy = Math.sin(angle) * dist;
+
+      leftPupil.setAttribute('transform', `translate(${dx}, ${dy})`);
+      rightPupil.setAttribute('transform', `translate(${dx}, ${dy})`);
+    });
+
+    // When password field is focused, pupils look shyly down
+    document.querySelectorAll('input[type="password"]').forEach((pwdInput) => {
+      pwdInput.addEventListener('focus', () => {
+        isPasswordFocused = true;
+        if (leftPupil) leftPupil.setAttribute('transform', 'translate(0, 2.5)');
+        if (rightPupil) rightPupil.setAttribute('transform', 'translate(0, 2.5)');
+      });
+      pwdInput.addEventListener('blur', () => {
+        isPasswordFocused = false;
+        if (leftPupil) leftPupil.setAttribute('transform', 'translate(0, 0)');
+        if (rightPupil) rightPupil.setAttribute('transform', 'translate(0, 0)');
+      });
+    });
+
+    // Hop on click
+    if (botWrap) {
+      botWrap.addEventListener('click', () => {
+        botWrap.classList.remove('hop-anim');
+        void botWrap.offsetWidth;
+        botWrap.classList.add('hop-anim');
+      });
+    }
+
+    // Toggle Password Visibility
+    function togglePasswordVisibility(fieldId, btn) {
+      const input = document.getElementById(fieldId);
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      btn.textContent = isPassword ? '🙈' : '👁️';
+    }
+
+    // Switch between Sign In and Create Account
+    function switchAuthMode(mode) {
+      hideAlert();
+      const isSignIn = mode === 'signin';
+      document.getElementById('tab-signin').classList.toggle('active', isSignIn);
+      document.getElementById('tab-signup').classList.toggle('active', !isSignIn);
+      document.getElementById('tab-signin').setAttribute('aria-selected', isSignIn);
+      document.getElementById('tab-signup').setAttribute('aria-selected', !isSignIn);
+
+      document.getElementById('form-signin').style.display = isSignIn ? 'block' : 'none';
+      document.getElementById('form-signup').style.display = isSignIn ? 'none' : 'block';
+
+      document.getElementById('header-sub').textContent = isSignIn
+        ? 'Curriculum textbooks, classrooms, and AI tutor'
+        : 'Register as Student, Faculty, or School Administrator';
+    }
+
+    // Role selection changes in registration
+    function handleRoleChange(role) {
+      const gradeField = document.getElementById('grade-field-group');
+      const facultyField = document.getElementById('faculty-field-group');
+      const adminField = document.getElementById('admin-field-group');
+
+      if (gradeField) gradeField.style.display = role === 'student' ? 'block' : 'none';
+      if (facultyField) facultyField.style.display = role === 'lecturer' ? 'block' : 'none';
+      if (adminField) adminField.style.display = role === 'org_admin' ? 'block' : 'none';
+    }
+
+    // Alert helpers
+    function showAlert(msg, isError = true) {
+      const box = document.getElementById('alert-box');
+      const icon = document.getElementById('alert-icon');
+      const text = document.getElementById('alert-message');
+      const card = document.getElementById('auth-card');
+
+      text.textContent = msg;
+      icon.textContent = isError ? '⚠️' : '✓';
+      box.className = 'alert-box visible ' + (isError ? 'alert-error' : 'alert-success');
+
+      if (isError && card) {
+        card.classList.remove('shake-error');
+        void card.offsetWidth;
+        card.classList.add('shake-error');
+      }
+    }
+
+    function hideAlert() {
+      const box = document.getElementById('alert-box');
+      box.className = 'alert-box';
+    }
+
+    // Token & Storage persistence (Synchronizes with App.jsx)
+    function persistAuth(tokens, user) {
+      if (tokens && tokens.access_token) {
+        localStorage.setItem('student_token', tokens.access_token);
+        localStorage.setItem('ncert_access_token', tokens.access_token);
+        if (tokens.refresh_token) {
+          localStorage.setItem('student_refresh_token', tokens.refresh_token);
+          localStorage.setItem('ncert_refresh_token', tokens.refresh_token);
+        }
+      }
+      if (user) {
+        localStorage.setItem('student_user', JSON.stringify(user));
+      }
+    }
+
+    // Sign In handler
+    async function handleSignIn(e) {
+      e.preventDefault();
+      hideAlert();
+      const btn = document.getElementById('btn-signin-submit');
+      const origContent = btn.innerHTML;
+
+      const username = document.getElementById('signin-username').value.trim();
+      const password = document.getElementById('signin-password').value;
+
+      if (!username || !password) {
+        showAlert('Please enter both your username and password.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<div class="btn-spinner"></div><span>Signing in…</span>';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
         });
+
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.detail || "Registration failed.");
+          throw new Error(data.detail || 'Invalid username or password.');
         }
 
-        // Store tokens & user
-        localStorage.setItem("student_token", data.access_token);
-        localStorage.setItem("student_refresh_token", data.refresh_token);
-        localStorage.setItem("student_user", JSON.stringify(data.user));
+        persistAuth(data, data.user);
+        sessionStorage.setItem('just_logged_in', 'true');
+        let roleLabel = 'Student';
+        if (data.user.role === 'org_admin') roleLabel = 'Administrator';
+        else if (data.user.role === 'lecturer') roleLabel = 'Faculty';
+        else roleLabel = `Class ${data.user.grade || 10} Student`;
 
-        showAlert(`Account created for Class ${data.user.grade}! Redirecting...`, false);
-        setTimeout(() => { window.location.href = "/"; }, 800);
+        showAlert(`Welcome, ${data.user.full_name || data.user.username} (${roleLabel})! Redirecting…`, false);
+
+        btn.innerHTML = '<span>✓ Signed In</span>';
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 700);
       } catch (err) {
-        showAlert(err.message, true);
+        showAlert(err.message || 'Authentication error.');
         btn.disabled = false;
-        btn.textContent = "Create Student Account";
+        btn.innerHTML = origContent;
+      }
+    }
+
+    // Sign Up handler
+    async function handleSignUp(e) {
+      e.preventDefault();
+      hideAlert();
+      const btn = document.getElementById('btn-signup-submit');
+      const origContent = btn.innerHTML;
+
+      const role = document.getElementById('signup-role').value;
+      const username = document.getElementById('signup-username').value.trim();
+      const grade = role === 'student' ? parseInt(document.getElementById('signup-grade').value, 10) : null;
+      const fullName = document.getElementById('signup-fullname').value.trim() || null;
+      const password = document.getElementById('signup-password').value;
+
+      let subject_tags = [];
+      if (role === 'lecturer') {
+        const rawSubjs = document.getElementById('signup-subjects').value;
+        if (rawSubjs) {
+          subject_tags = rawSubjs.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      }
+
+      if (!username) {
+        showAlert('Please enter a username.');
+        return;
+      }
+      if (password.length < 6) {
+        showAlert('Password must be at least 6 characters long.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<div class="btn-spinner"></div><span>Creating account…</span>';
+
+      try {
+        const payload = {
+          username,
+          password,
+          role,
+          grade,
+          full_name: fullName,
+          subject_tags: role === 'lecturer' ? subject_tags : undefined,
+        };
+
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Registration failed.');
+        }
+
+        persistAuth(data, data.user);
+        sessionStorage.setItem('just_logged_in', 'true');
+        showAlert('Account created successfully! Redirecting to Learnright…', false);
+
+        btn.innerHTML = '<span>✓ Account Ready</span>';
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 800);
+      } catch (err) {
+        showAlert(err.message || 'Registration failed.');
+        btn.disabled = false;
+        btn.innerHTML = origContent;
       }
     }
   </script>
 </body>
 </html>
-

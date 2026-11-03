@@ -10,22 +10,37 @@ from pydantic import BaseModel, Field
 # ── Institution Lifecycle ──
 
 class InstitutionCreateRequest(BaseModel):
-    name: str = Field(min_length=3, max_length=150, description="School/Institution Name")
-    demo_verification_id: str = Field(
-        min_length=3, max_length=64, description="Demo verification ID or registration code"
+    name: str = Field(min_length=2, max_length=150, description="School name to identify the school")
+    school_code: str | None = Field(default=None, description="Unique school identification code / ID")
+    demo_verification_id: str | None = Field(default=None, description="Legacy verification code")
+    location: str | None = Field(default=None, max_length=200, description="Identify education board and regional context")
+    academic_year: str | None = Field(default="2026-2027", max_length=32, description="Current syllabus academic year")
+    website: str | None = Field(default=None, max_length=255, description="Official school website URL")
+    affiliation_number: str | None = Field(default=None, max_length=100, description="Board affiliation number")
+    medium_of_instruction: str | None = Field(default="English", max_length=64, description="Language of instruction")
+    education_levels: list[str] | None = Field(
+        default=None, description="Levels: Primary, Middle, Secondary, Higher Secondary"
     )
+    available_classes: str | None = Field(default="LKG–Grade 12", max_length=100, description="Range of available classes")
 
 
 class InstitutionJoinRequest(BaseModel):
-    demo_verification_id: str = Field(
-        min_length=3, max_length=64, description="Institution verification or access code"
-    )
+    school_code: str | None = Field(default=None, description="School Code / ID")
+    demo_verification_id: str | None = Field(default=None, description="Legacy verification code")
 
 
 class InstitutionResponse(BaseModel):
     id: str
     name: str
-    demo_verification_id: str
+    school_code: str | None = None
+    demo_verification_id: str | None = None
+    location: str | None = None
+    academic_year: str | None = None
+    website: str | None = None
+    affiliation_number: str | None = None
+    medium_of_instruction: str | None = None
+    education_levels: list[str] | None = None
+    available_classes: str | None = None
     is_active: bool
     created_at: datetime
 
@@ -129,3 +144,4 @@ class StudentRosterItem(BaseModel):
     class_name: str | None = None
     section_name: str | None = None
     created_at: datetime
+

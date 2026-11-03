@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { BotAvatar } from 'bot-avatars';
 import { ThinkingOrb } from 'thinking-orbs';
 import { MetalFx, MetalBadge, MetalText } from 'metal-fx';
@@ -22,10 +22,12 @@ import {
   SettingsGearIcon,
 } from './GeminiIcons';
 import { AppleGlassDropdown } from './AppleGlassDropdown';
+import { ModelSelectorDropdown } from './ModelSelectorDropdown';
 import ParentalAuthModal from './components/parental/ParentalAuthModal';
 import ParentalPortalModal from './components/parental/ParentalPortalModal';
 import InstitutionAdminModal from './components/institution/InstitutionAdminModal';
 import JoinInstitutionModal from './components/institution/JoinInstitutionModal';
+import TutorialModal from './components/tutorial/TutorialModal';
 import { THEMES } from './themes';
 import './App.css';
 
@@ -222,22 +224,33 @@ export default function App() {
     }
   });
 
-  const [activeSessionId, setActiveSessionId] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-      return saved[0]?.id || null;
-    } catch {
-      return null;
-    }
-  });
+  // Always start in a fresh new chat session by default on website open/refresh
+  const [activeSessionId, setActiveSessionId] = useState(null);
 
   // Server data
   const [subjects, setSubjects] = useState([]);
-  const [selectedGrade, setSelectedGrade] = useState(5);
-  const [selectedSubject, setSelectedSubject] = useState('English');
+  const [selectedGrade, setSelectedGrade] = useState(() => {
+    try {
+      const raw = localStorage.getItem('student_user');
+      if (raw) return JSON.parse(raw)?.grade || 10;
+    } catch { }
+    return 10;
+  });
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedChapter, setSelectedChapter] = useState(null);
   const [language, setLanguage] = useState('English');
   const [status, setStatus] = useState({ text: 'Connecting…', type: 'connecting' });
+
+  // Model Selector state (Local & Cloud models)
+  const [activeModelInfo, setActiveModelInfo] = useState({
+    provider: 'ollama',
+    model: 'qwen3.5:4b',
+    is_cloud: false,
+    tag: 'Local',
+    display_name: 'Ollama: qwen3.5:4b',
+  });
+  const [localModels, setLocalModels] = useState([]);
+  const [cloudModels, setCloudModels] = useState([]);
 
   // Input & In-flight state
   const [question, setQuestion] = useState('');
@@ -336,6 +349,30 @@ export default function App() {
   const [parentPortalTab, setParentPortalTab] = useState('overview');
   const [unreviewedAlertCount, setUnreviewedAlertCount] = useState(0);
 
+  const isValidJwt = (t) => typeof t === 'string' && t.trim().split('.').length === 3;
+
+  const getStoredToken = () => {
+    try {
+      const candidates = [
+        localStorage.getItem('ncert_access_token'),
+        localStorage.getItem('student_token'),
+        sessionStorage.getItem('ncert_access_token'),
+        sessionStorage.getItem('student_token'),
+      ];
+      for (const c of candidates) {
+        if (isValidJwt(c)) return c.trim();
+      }
+      // Purge non-JWT or corrupted tokens that crash PyJWT
+      ['ncert_access_token', 'student_token'].forEach((k) => {
+        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
+      });
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   // Student / User Profile State
   const [studentUser, setStudentUser] = useState(() => {
     try {
@@ -345,16 +382,22 @@ export default function App() {
     return { username: 'abin_biju', full_name: 'Abin Biju', grade: 10, role: 'student' };
   });
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [authToken, setAuthToken] = useState(() => {
-    try {
-      return localStorage.getItem('ncert_access_token') || sessionStorage.getItem('ncert_access_token') || null;
-    } catch {
-      return null;
-    }
-  });
+  const [authToken, setAuthToken] = useState(() => getStoredToken());
   const [instAdminModalOpen, setInstAdminModalOpen] = useState(false);
   const [joinInstModalOpen, setJoinInstModalOpen] = useState(false);
   const [urlInviteToken, setUrlInviteToken] = useState('');
+  const [tutorialModalOpen, setTutorialModalOpen] = useState(() => {
+    try {
+      const justLoggedIn = sessionStorage.getItem('just_logged_in');
+      if (justLoggedIn === 'true') {
+        sessionStorage.removeItem('just_logged_in');
+        return true;
+      }
+      return localStorage.getItem('learnright_tutorial_dismissed') !== 'true';
+    } catch {
+      return true;
+    }
+  });
 
   // Auto-detect invite link in URL (?invite=...)
   useEffect(() => {
@@ -372,7 +415,7 @@ export default function App() {
   }, []);
 
   const refreshUserProfile = useCallback(async () => {
-    const token = authToken || localStorage.getItem('ncert_access_token');
+    const token = isValidJwt(authToken) ? authToken : getStoredToken();
     if (!token) return;
     try {
       const res = await fetch('/api/auth/me', {
@@ -382,6 +425,14 @@ export default function App() {
         const u = await res.json();
         setStudentUser(u);
         try { localStorage.setItem('student_user', JSON.stringify(u)); } catch {}
+      } else if (res.status === 401) {
+        setAuthToken(null);
+        try {
+          localStorage.removeItem('ncert_access_token');
+          localStorage.removeItem('student_token');
+          sessionStorage.removeItem('ncert_access_token');
+          sessionStorage.removeItem('student_token');
+        } catch {}
       }
     } catch {}
   }, [authToken]);
@@ -391,16 +442,68 @@ export default function App() {
   }, [refreshUserProfile]);
 
   const handleJoinedInstitutionSuccess = (tokens, user) => {
-    if (tokens?.access_token) {
+    if (tokens?.access_token && isValidJwt(tokens.access_token)) {
       setAuthToken(tokens.access_token);
       try {
         localStorage.setItem('ncert_access_token', tokens.access_token);
-        if (tokens.refresh_token) localStorage.setItem('ncert_refresh_token', tokens.refresh_token);
+        localStorage.setItem('student_token', tokens.access_token);
+        if (tokens.refresh_token) {
+          localStorage.setItem('ncert_refresh_token', tokens.refresh_token);
+          localStorage.setItem('student_refresh_token', tokens.refresh_token);
+        }
       } catch {}
     }
     if (user) {
       setStudentUser(user);
       try { localStorage.setItem('student_user', JSON.stringify(user)); } catch {}
+    }
+    reloadSubjects();
+  };
+
+  const handleSwitchDemoRole = async (role, grade = 10) => {
+    setUserMenuOpen(false);
+    try {
+      const res = await fetch('/api/auth/demo-switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, grade }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.access_token && isValidJwt(data.access_token)) {
+          setAuthToken(data.access_token);
+          try {
+            localStorage.setItem('ncert_access_token', data.access_token);
+            localStorage.setItem('student_token', data.access_token);
+            if (data.refresh_token) {
+              localStorage.setItem('ncert_refresh_token', data.refresh_token);
+              localStorage.setItem('student_refresh_token', data.refresh_token);
+            }
+          } catch {}
+        }
+        if (data.user) {
+          setStudentUser(data.user);
+          try { localStorage.setItem('student_user', JSON.stringify(data.user)); } catch {}
+        }
+      } else {
+        const updated = {
+          ...studentUser,
+          role,
+          grade: role === 'student' ? grade : null,
+          subject_tags: role === 'lecturer' ? ['Science', 'Physics'] : [],
+        };
+        setStudentUser(updated);
+        try { localStorage.setItem('student_user', JSON.stringify(updated)); } catch {}
+      }
+    } catch {
+      const updated = {
+        ...studentUser,
+        role,
+        grade: role === 'student' ? grade : null,
+        subject_tags: role === 'lecturer' ? ['Science', 'Physics'] : [],
+      };
+      setStudentUser(updated);
+      try { localStorage.setItem('student_user', JSON.stringify(updated)); } catch {}
     }
     reloadSubjects();
   };
@@ -418,7 +521,9 @@ export default function App() {
 
   const reloadSubjects = async () => {
     try {
-      const sRes = await fetch('/api/subjects');
+      const token = authToken || getStoredToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const sRes = await fetch('/api/subjects', { headers });
       if (sRes.ok) {
         const data = await sRes.json();
         setSubjects(data);
@@ -519,20 +624,51 @@ export default function App() {
 
       // Load subjects
       try {
-        const sRes = await fetch('/api/subjects');
+        const token = getStoredToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const sRes = await fetch('/api/subjects', { headers });
         if (sRes.ok) {
           const data = await sRes.json();
           setSubjects(data);
-          if (data.length > 0 && !selectedSubject) {
-            setSelectedSubject(`${data[0].grade}|${data[0].subject}`);
-          }
+          // Do NOT auto-select subject! Let user select "Choose subject" every time.
         }
       } catch (e) {
         console.error('Failed to load subjects', e);
       }
+
+      // Load models & active LLM
+      try {
+        const mRes = await fetch('/api/models');
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          if (mData.active) setActiveModelInfo(mData.active);
+          if (mData.local) setLocalModels(mData.local);
+          if (mData.cloud) setCloudModels(mData.cloud);
+        }
+      } catch (e) {
+        console.error('Failed to load models', e);
+      }
     }
     init();
   }, []);
+
+  const handleSelectModel = async (provider, model) => {
+    try {
+      const res = await fetch('/api/models/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.active) {
+          setActiveModelInfo(data.active);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to switch model', e);
+    }
+  };
 
   // Ensure an active session exists
   const getOrCreateActiveSessionId = () => {
@@ -561,6 +697,8 @@ export default function App() {
     };
     setSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
+    setSelectedSubject('');
+    setSelectedChapter(null);
     setCurrentStreamAnswer('');
     setCurrentStreamSources([]);
     setFeedbackSent(false);
@@ -635,6 +773,15 @@ export default function App() {
     const cleanQ = (q || '').trim();
     if (!cleanQ || isAsking) return;
 
+    if (!selectedSubject) {
+      const subjectBtn = document.getElementById('subject-select');
+      if (subjectBtn) {
+        subjectBtn.click();
+        subjectBtn.focus();
+      }
+      return;
+    }
+
     const currentSid = getOrCreateActiveSessionId();
 
     if (fromMessageIndex !== null) {
@@ -683,25 +830,34 @@ export default function App() {
     const activeSession = sessions.find((s) => s.id === currentSid);
     const historyPayload = (activeSession?.messages || [])
       .filter((m) => m.text && (m.role === 'user' || m.role === 'assistant'))
-      .slice(-6)
+      .slice(-30)
       .map((m) => ({
         role: m.role,
         content: m.text,
+        model_id: m.model_id,
       }));
 
+    const currentModelId = activeModelInfo?.model_id || `${activeModelInfo?.provider}/${activeModelInfo?.model}`;
+    const currentModelName = activeModelInfo?.model || 'qwen3.5:4b';
+
     try {
+      const token = authToken || getStoredToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/ask/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           question: cleanQ,
-          grade: selectedGrade,
+          grade: authorizedGrade,
           subject: selectedSubject,
           chapter: selectedChapter,
           language,
           pure_llm: pureLlm,
           session_id: currentSid,
           history: historyPayload,
+          model_id: currentModelId,
         }),
       });
 
@@ -769,6 +925,8 @@ export default function App() {
                   promptPureLlm: !pureLlm && (!isFound || shouldPromptPureLlm),
                   questionPrompt: cleanQ,
                   metrics: streamMetrics,
+                  model_id: currentModelId,
+                  model_name: currentModelName,
                 },
               ],
             };
@@ -873,11 +1031,16 @@ export default function App() {
     setPdfPreview((prev) => ({ ...prev, isOpen: false }));
   };
 
+  const authorizedGrade = studentUser?.grade || selectedGrade || 10;
+  // If student is authorized for Class 10, strictly show only Class 10 subjects
   const availableGrades = [...new Set(subjects.map((s) => s.grade))].sort((a, b) => a - b);
-  const availableSubjects = subjects.filter((s) => s.grade === selectedGrade);
-  const currentBook = subjects.find((s) => s.grade === selectedGrade && s.subject === selectedSubject);
+  const availableSubjects = subjects.filter((s) => Number(s.grade) === Number(authorizedGrade));
+  const currentBook = availableSubjects.find((s) => s.subject === selectedSubject);
   const availableChapters = currentBook?.chapters || [];
-  const exampleQuestions = EXAMPLES[`${selectedGrade}|${selectedSubject}`] || EXAMPLES['5|English'] || [];
+  const exampleQuestions = (selectedSubject && EXAMPLES[`${authorizedGrade}|${selectedSubject}`])
+    || EXAMPLES[`${authorizedGrade}|English`]
+    || EXAMPLES['10|Science']
+    || ['What is a balanced chemical equation?', 'Why does the sky appear blue?'];
 
   // Merge static NCERT books with dynamic parent-uploaded custom curriculum books
   const allCatalogBooks = useMemo(() => {
@@ -1095,6 +1258,17 @@ export default function App() {
                 <span>🏫 Join an Institution (Invite)</span>
               </button>
 
+              <button
+                type="button"
+                className="user-menu-item"
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  setTutorialModalOpen(true);
+                }}
+              >
+                <span>✨ Welcome Tutorial &amp; Guide</span>
+              </button>
+
               <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 0' }} />
 
               {/* Demo Role Switcher */}
@@ -1102,13 +1276,7 @@ export default function App() {
               <button
                 type="button"
                 className={`user-menu-item ${studentUser?.role === 'student' && studentUser?.grade === 10 ? 'active' : ''}`}
-                onClick={() => {
-                  const updated = { ...studentUser, role: 'student', grade: 10 };
-                  setStudentUser(updated);
-                  try { localStorage.setItem('student_user', JSON.stringify(updated)); } catch {}
-                  setUserMenuOpen(false);
-                  reloadSubjects();
-                }}
+                onClick={() => handleSwitchDemoRole('student', 10)}
               >
                 <span>Student · Class 10</span>
                 {studentUser?.role === 'student' && studentUser?.grade === 10 && <span>✓</span>}
@@ -1117,13 +1285,7 @@ export default function App() {
               <button
                 type="button"
                 className={`user-menu-item ${studentUser?.role === 'org_admin' ? 'active' : ''}`}
-                onClick={() => {
-                  const updated = { ...studentUser, role: 'org_admin', grade: null };
-                  setStudentUser(updated);
-                  try { localStorage.setItem('student_user', JSON.stringify(updated)); } catch {}
-                  setUserMenuOpen(false);
-                  reloadSubjects();
-                }}
+                onClick={() => handleSwitchDemoRole('org_admin')}
               >
                 <span>Org Admin (Principal)</span>
                 {studentUser?.role === 'org_admin' && <span>✓</span>}
@@ -1132,18 +1294,7 @@ export default function App() {
               <button
                 type="button"
                 className={`user-menu-item ${studentUser?.role === 'lecturer' ? 'active' : ''}`}
-                onClick={() => {
-                  const updated = {
-                    ...studentUser,
-                    role: 'lecturer',
-                    grade: null,
-                    subject_tags: ['Science', 'Physics'],
-                  };
-                  setStudentUser(updated);
-                  try { localStorage.setItem('student_user', JSON.stringify(updated)); } catch {}
-                  setUserMenuOpen(false);
-                  reloadSubjects();
-                }}
+                onClick={() => handleSwitchDemoRole('lecturer')}
               >
                 <span>Lecturer (Faculty)</span>
                 {studentUser?.role === 'lecturer' && <span>✓</span>}
@@ -1290,6 +1441,16 @@ export default function App() {
                 Hide PDF
               </button>
             )}
+
+            <button
+              type="button"
+              className="topbar-tutorial-btn"
+              onClick={() => setTutorialModalOpen(true)}
+              title="Learnright Tutorial & Quick Guide"
+            >
+              <span>✨</span>
+              <span>Tutorial</span>
+            </button>
           </div>
         </header>
 
@@ -1312,6 +1473,16 @@ export default function App() {
                   <p className="welcome-desc">
                     Ask a question about your selected textbook.
                   </p>
+
+                  <button
+                    type="button"
+                    className="topbar-tutorial-btn"
+                    onClick={() => setTutorialModalOpen(true)}
+                    style={{ marginTop: 8, marginBottom: 16 }}
+                  >
+                    <span>✨</span>
+                    <span>New to Learnright? Take the quick tour</span>
+                  </button>
 
                   <div className="example-chips">
                     {exampleQuestions.map((eg, idx) => (
@@ -1363,16 +1534,23 @@ export default function App() {
                       />
 
                       {/* Conversation Turn Metrics Bar */}
-                      {msg.metrics && (
+                      {(msg.metrics || msg.model_id) && (
                         <div className="msg-metrics-bar">
-                          <span className="metric-tag" title="Total response latency">⏱️ {msg.metrics.total_latency_s}s</span>
-                          {msg.metrics.tokens_per_second > 0 && (
+                          {(msg.model_name || msg.model_id) && (
+                            <span className="metric-tag model-tag" title={`Generated by ${msg.model_name || msg.model_id}`}>
+                              🤖 {msg.model_name || msg.model_id}
+                            </span>
+                          )}
+                          {msg.metrics?.total_latency_s !== undefined && (
+                            <span className="metric-tag" title="Total response latency">⏱️ {msg.metrics.total_latency_s}s</span>
+                          )}
+                          {msg.metrics?.tokens_per_second > 0 && (
                             <span className="metric-tag" title="Generation speed">⚡ {msg.metrics.tokens_per_second} tok/s</span>
                           )}
-                          {msg.metrics.retrieval_time_s > 0 && (
+                          {msg.metrics?.retrieval_time_s > 0 && (
                             <span className="metric-tag" title="Textbook retrieval time">🔍 {msg.metrics.retrieval_time_s}s search</span>
                           )}
-                          {msg.metrics.top_similarity_score !== undefined && msg.metrics.top_similarity_score !== null && (
+                          {msg.metrics?.top_similarity_score !== undefined && msg.metrics?.top_similarity_score !== null && (
                             <span className="metric-tag" title="Top similarity score">🎯 Match: {(msg.metrics.top_similarity_score * 100).toFixed(0)}%</span>
                           )}
                         </div>
@@ -1651,25 +1829,13 @@ export default function App() {
 
                       {/* Right: Dropdown Pills + Circular Ask Button matching Image 2 */}
                       <div className="composer-right-actions">
-                        {/* 1. Class Dropdown */}
-                        <AppleGlassDropdown
-                          id="grade-select"
-                          value={selectedGrade}
-                          options={availableGrades.map((g) => ({
-                            value: g,
-                            label: `Class ${g}`,
-                          }))}
-                          onChange={(val) => {
-                            const newGrade = Number(val);
-                            setSelectedGrade(newGrade);
-                            const subjs = subjects.filter((s) => s.grade === newGrade);
-                            if (subjs.length > 0) {
-                              setSelectedSubject(subjs[0].subject);
-                            }
-                            setSelectedChapter(null);
-                          }}
+                        {/* 1. Model Selector Dropdown (Replaces Class dropdown with Local & Cloud Model Selector) */}
+                        <ModelSelectorDropdown
+                          activeModel={activeModelInfo}
+                          localModels={localModels}
+                          cloudModels={cloudModels}
+                          onSelectModel={handleSelectModel}
                           disabled={isAsking}
-                          menuWidth="130px"
                           openUpward={true}
                         />
 
@@ -1677,16 +1843,21 @@ export default function App() {
                         <AppleGlassDropdown
                           id="subject-select"
                           value={selectedSubject}
-                          options={availableSubjects.map((s) => ({
-                            value: s.subject,
-                            label: s.subject,
-                          }))}
+                          placeholder="Choose subject"
+                          options={[
+                            { value: '', label: 'Choose subject' },
+                            ...availableSubjects.map((s) => ({
+                              value: s.subject,
+                              label: s.subject,
+                            })),
+                          ]}
                           onChange={(val) => {
                             setSelectedSubject(val);
+                            setSelectedGrade(authorizedGrade);
                             setSelectedChapter(null);
                           }}
                           disabled={isAsking}
-                          menuWidth="160px"
+                          menuWidth="190px"
                           openUpward={true}
                         />
 
@@ -1694,6 +1865,7 @@ export default function App() {
                         <AppleGlassDropdown
                           id="chapter-select"
                           value={selectedChapter ?? ''}
+                          placeholder="All Lessons"
                           options={[
                             { value: '', label: 'All Lessons' },
                             ...availableChapters.map((ch) => ({
@@ -1704,7 +1876,7 @@ export default function App() {
                           onChange={(val) => {
                             setSelectedChapter(val ? Number(val) : null);
                           }}
-                          disabled={isAsking}
+                          disabled={isAsking || !selectedSubject}
                           menuWidth="260px"
                           openUpward={true}
                         />
@@ -1720,8 +1892,8 @@ export default function App() {
                           <button
                             className="circle-ask-btn"
                             type="submit"
-                            disabled={isAsking || question.trim().length < 2}
-                            title="Ask question"
+                            disabled={isAsking || question.trim().length < 2 || !selectedSubject}
+                            title={!selectedSubject ? 'Please choose a subject first' : 'Ask question'}
                           >
                             <RobotAskIcon size={20} />
                           </button>
@@ -2212,7 +2384,7 @@ export default function App() {
       <InstitutionAdminModal
         isOpen={instAdminModalOpen}
         onClose={() => setInstAdminModalOpen(false)}
-        token={authToken || localStorage.getItem('ncert_access_token')}
+        token={isValidJwt(authToken) ? authToken : getStoredToken()}
         currentUser={studentUser}
         onInstitutionUpdated={() => {
           refreshUserProfile();
@@ -2227,9 +2399,22 @@ export default function App() {
           setJoinInstModalOpen(false);
           setUrlInviteToken('');
         }}
-        token={authToken || localStorage.getItem('ncert_access_token')}
+        token={isValidJwt(authToken) ? authToken : getStoredToken()}
         initialInviteToken={urlInviteToken}
         onJoinedSuccess={handleJoinedInstitutionSuccess}
+      />
+
+      {/* 10. Claude-Style Onboarding Tutorial Modal */}
+      <TutorialModal
+        isOpen={tutorialModalOpen}
+        onClose={() => setTutorialModalOpen(false)}
+        currentUser={studentUser}
+        onSelectPrompt={(text) => {
+          setQuestion(text);
+          setTimeout(() => {
+            textareaRef.current?.focus();
+          }, 100);
+        }}
       />
     </div>
   );

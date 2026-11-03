@@ -14,6 +14,7 @@ then open http://localhost:8000 (the API docs are at /docs).
 
 import json
 import logging
+import os
 import secrets
 import threading
 import time
@@ -86,6 +87,10 @@ def explain(error: Exception) -> str:
     if isinstance(error, ollama.ResponseError) and error.status_code == 404:
         return (f"Ollama says: {error.error}. Download the models with "
                 f"'ollama pull {settings.llm_model}' and 'ollama pull {settings.embed_model}'.")
+    err_str = str(error)
+    if "model_not_found" in err_str or "does not exist or you do not have access to it" in err_str:
+        return (f"Model '{settings.llm_model}' is not accessible on your {settings.llm.capitalize()} account. "
+                f"Please select 'openai/gpt-oss-120b' or 'openai/gpt-oss-20b' in the Model Selector.")
     return f"Something went wrong: {error}"
 
 
@@ -98,6 +103,28 @@ class Question(BaseModel):
     pure_llm: bool = False
     session_id: str | None = None
     history: list[dict] = Field(default_factory=list)
+    summary: str | None = None
+    model_id: str | None = None
+
+
+class ModelSelectRequest(BaseModel):
+    provider: str
+    model: str | None = None
+    session_id: str | None = None
+
+
+# Session mutex locks for concurrency control during generation / switching (SKILL.md Section 4 & 13)
+session_locks: dict[str, threading.Lock] = {}
+session_locks_guard = threading.Lock()
+
+
+def get_session_lock(session_id: str | None) -> threading.Lock:
+    if not session_id:
+        return threading.Lock()
+    with session_locks_guard:
+        if session_id not in session_locks:
+            session_locks[session_id] = threading.Lock()
+        return session_locks[session_id]
 
 
 class Feedback(BaseModel):
@@ -151,10 +178,31 @@ def health():
                                                (settings.embed_model, settings.embedder == "ollama")) if used]
     if ollama_models:
         services["ollama"] = check_ollama(ollama_models)
-    if settings.embedder != "ollama":
+
+    if settings.embedder in ("tei", "opea"):
         services["embedding server"] = check_server(settings.embed_url)
-    if settings.llm != "ollama":
+    elif settings.embedder == "openai":
+        has_key = bool(settings.openai_api_key or settings.codex_api_key or os.getenv("OPENAI_API_KEY"))
+        services["openai embeddings"] = "ok" if has_key else "missing OPENAI_API_KEY in .env"
+    elif settings.embedder == "gemini":
+        has_key = bool(settings.gemini_api_key or settings.antigravity_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("ANTIGRAVITY_API_KEY"))
+        services["gemini embeddings"] = "ok" if has_key else "missing GEMINI_API_KEY in .env"
+
+    if settings.llm in ("openai_like", "opea"):
         services["llm server"] = check_server(settings.llm_url)
+    elif settings.llm in ("claude", "anthropic", "claude_agent"):
+        has_key = bool(settings.anthropic_api_key or settings.claude_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY"))
+        services["claude"] = "ok" if has_key else "missing ANTHROPIC_API_KEY in .env"
+    elif settings.llm in ("codex", "openai"):
+        has_key = bool(settings.openai_api_key or settings.codex_api_key or os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_API_KEY"))
+        services["openai/codex"] = "ok" if has_key else "missing OPENAI_API_KEY in .env"
+    elif settings.llm in ("antigravity", "gemini"):
+        has_key = bool(settings.antigravity_api_key or settings.gemini_api_key or settings.google_api_key or os.getenv("ANTIGRAVITY_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+        services["antigravity/gemini"] = "ok" if has_key else "missing GEMINI_API_KEY or ANTIGRAVITY_API_KEY in .env"
+    elif settings.llm in ("groq", "grok"):
+        has_key = bool(settings.groq_api_key or settings.grok_api_key or os.getenv("GROQ_API_KEY") or os.getenv("GROK_API_KEY"))
+        services[settings.llm] = "ok" if has_key else "missing GROQ_API_KEY (or GROK_API_KEY) in .env"
+
     if settings.vector_store == "qdrant" and settings.qdrant_url:
         services["qdrant"] = check_server(settings.qdrant_url)
 
@@ -162,6 +210,211 @@ def health():
     return {"status": "ok" if ok else "error", "index": index_status(), **services,
             "adapters": {"embedder": settings.embedder, "llm": settings.llm, "vector_store": settings.vector_store},
             "llm_model": settings.llm_model, "embed_model": settings.embed_model}
+
+
+@app.get("/api/models")
+def get_available_models():
+    from app.config import reload_env_settings
+    reload_env_settings()
+    local_models = []
+    # Query local Ollama if running
+    try:
+        url = settings.ollama_url.replace("localhost", "127.0.0.1")
+        resp = httpx.get(f"{url}/api/tags", timeout=httpx.Timeout(connect=0.2, read=0.5, write=0.5, pool=0.2))
+        if resp.status_code == 200:
+            for m in resp.json().get("models", []):
+                name = m.get("name", "")
+                param_size = m.get("details", {}).get("parameter_size", "4B")
+                local_models.append({
+                    "id": f"ollama/{name}",
+                    "provider": "ollama",
+                    "model": name,
+                    "label": f"Ollama {name}",
+                    "badge": "Local",
+                    "details": f"{param_size} · On-Device Private Inference",
+                })
+    except Exception:
+        pass
+
+    if not local_models:
+        local_models = [
+            {
+                "id": f"ollama/{settings.llm_model if settings.llm == 'ollama' else 'qwen3.5:4b'}",
+                "provider": "ollama",
+                "model": settings.llm_model if settings.llm == "ollama" else "qwen3.5:4b",
+                "label": f"Ollama {settings.llm_model if settings.llm == 'ollama' else 'qwen3.5:4b'}",
+                "badge": "Local",
+                "details": "Local On-Device · Free & Offline",
+            }
+        ]
+
+    groq_models = []
+    groq_key = settings.groq_api_key or os.getenv("GROQ_API_KEY") or settings.grok_api_key or os.getenv("GROK_API_KEY")
+    if groq_key:
+        try:
+            r = httpx.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {groq_key}"}, timeout=2.0)
+            if r.status_code == 200:
+                for m in r.json().get("data", []):
+                    mid = m.get("id", "")
+                    if any(skip in mid.lower() for skip in ("guard", "whisper", "orpheus")):
+                        continue
+                    label_name = mid.split("/")[-1].upper()
+                    groq_models.append({
+                        "id": f"groq/{mid}",
+                        "provider": "groq",
+                        "model": mid,
+                        "label": f"Groq {label_name}",
+                        "badge": "Groq Cloud",
+                        "details": f"Groq LPU Acceleration · {mid}",
+                        "has_key": True,
+                    })
+        except Exception:
+            pass
+
+    if not groq_models:
+        groq_models = [
+            {
+                "id": "groq/openai/gpt-oss-120b",
+                "provider": "groq",
+                "model": "openai/gpt-oss-120b",
+                "label": "Groq OpenAI GPT-OSS 120B",
+                "badge": "Groq Cloud",
+                "details": "Ultra-fast inference (500+ tok/s) · High reasoning",
+                "has_key": bool(groq_key),
+            },
+            {
+                "id": "groq/openai/gpt-oss-20b",
+                "provider": "groq",
+                "model": "openai/gpt-oss-20b",
+                "label": "Groq OpenAI GPT-OSS 20B",
+                "badge": "Groq Cloud",
+                "details": "Ultra-fast inference (800+ tok/s) · Lightweight",
+                "has_key": bool(groq_key),
+            },
+            {
+                "id": "groq/qwen/qwen3.8-27b",
+                "provider": "groq",
+                "model": "qwen/qwen3.8-27b",
+                "label": "Groq Qwen 3.8 27B",
+                "badge": "Groq Cloud",
+                "details": "Fast on-chip reasoning",
+                "has_key": bool(groq_key),
+            },
+        ]
+
+    cloud_models = [
+        *groq_models,
+        {
+            "id": "claude/claude-3-5-sonnet-latest",
+            "provider": "claude",
+            "model": "claude-3-5-sonnet-latest",
+            "label": "Claude 3.5 Sonnet",
+            "badge": "Claude Agent SDK",
+            "details": "Anthropic · State-of-the-art reasoning",
+            "has_key": bool(settings.anthropic_api_key or settings.claude_api_key or os.getenv("ANTHROPIC_API_KEY")),
+        },
+        {
+            "id": "codex/gpt-4o-mini",
+            "provider": "codex",
+            "model": "gpt-4o-mini",
+            "label": "OpenAI GPT-4o Mini",
+            "badge": "Codex / OpenAI SDK",
+            "details": "OpenAI · Fast & accurate",
+            "has_key": bool(settings.openai_api_key or settings.codex_api_key or os.getenv("OPENAI_API_KEY")),
+        },
+        {
+            "id": "antigravity/gemini-2.0-flash",
+            "provider": "antigravity",
+            "model": "gemini-2.0-flash",
+            "label": "Gemini 2.0 Flash",
+            "badge": "AntiGravity SDK",
+            "details": "Google GenAI SDK · Next-gen multimodal",
+            "has_key": bool(settings.antigravity_api_key or settings.gemini_api_key or settings.google_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("ANTIGRAVITY_API_KEY")),
+        },
+        {
+            "id": "grok/grok-2-latest",
+            "provider": "grok",
+            "model": "grok-2-latest",
+            "label": "xAI Grok-2",
+            "badge": "Grok API",
+            "details": "xAI Grok · Real-time reasoning",
+            "has_key": bool(settings.grok_api_key or settings.groq_api_key or os.getenv("GROK_API_KEY")),
+        },
+    ]
+
+    is_cloud = settings.llm != "ollama"
+    display_tag = "Cloud" if is_cloud else "Local"
+    display_name = f"{settings.llm.capitalize()}: {settings.llm_model}" if is_cloud else f"Ollama: {settings.llm_model}"
+
+    return {
+        "active": {
+            "provider": settings.llm,
+            "model": settings.llm_model,
+            "is_cloud": is_cloud,
+            "tag": display_tag,
+            "display_name": display_name,
+        },
+        "local": local_models,
+        "cloud": cloud_models,
+    }
+
+
+@app.post("/api/models/select")
+def select_model(req: ModelSelectRequest):
+    global rag
+    from app.adapters import LLMS
+    if req.provider not in LLMS:
+        raise HTTPException(400, f"Unknown provider {req.provider}. Choices: {LLMS}")
+
+    lock = get_session_lock(req.session_id)
+    with lock:
+        from app.config import reload_env_settings
+        reload_env_settings()
+        prev_llm = settings.llm
+        prev_model = settings.llm_model
+
+        settings.llm = req.provider
+        if req.model:
+            settings.llm_model = req.model
+        else:
+            if req.provider in ("claude", "anthropic", "claude_agent"):
+                settings.llm_model = "claude-3-5-sonnet-latest"
+            elif req.provider in ("codex", "openai"):
+                settings.llm_model = "gpt-4o-mini"
+            elif req.provider in ("antigravity", "gemini"):
+                settings.llm_model = "gemini-2.0-flash"
+            elif req.provider == "groq":
+                settings.llm_model = "openai/gpt-oss-120b"
+            elif req.provider == "grok":
+                settings.llm_model = "grok-2-latest"
+            elif req.provider == "ollama":
+                settings.llm_model = "qwen3.5:4b"
+
+        # Reinitialize RAG's LLM safely
+        if rag is not None:
+            try:
+                rag.llm = make_llm()
+            except Exception as e:
+                settings.llm = prev_llm
+                settings.llm_model = prev_model
+                raise HTTPException(400, f"Failed to switch to {req.provider}: {e}")
+
+        is_cloud = settings.llm != "ollama"
+        display_tag = "Cloud" if is_cloud else "Local"
+        display_name = f"{settings.llm.capitalize()}: {settings.llm_model}" if is_cloud else f"Ollama: {settings.llm_model}"
+
+        return {
+            "status": "ok",
+            "ok": True,
+            "active": {
+                "provider": settings.llm,
+                "model": settings.llm_model,
+                "model_id": f"{settings.llm}/{settings.llm_model}",
+                "is_cloud": is_cloud,
+                "tag": display_tag,
+                "display_name": display_name,
+            }
+        }
 
 
 @app.get("/api/subjects")
@@ -182,6 +435,7 @@ def make_turn_record(
     safety_category: str | None = None,
     latency_s: float | None = None,
 ) -> dict:
+    active_model_id = q.model_id or f"{settings.llm}/{settings.llm_model}"
     return {
         "turn_id": f"turn_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(3)}",
         "session_id": q.session_id,
@@ -199,13 +453,26 @@ def make_turn_record(
         "flagged": flagged,
         "safety_category": safety_category,
         "latency_s": latency_s,
+        "model_id": active_model_id,
     }
+
+
+def align_model_for_request(q: Question) -> None:
+    """Ensure active RAG LLM matches requested model_id before generation."""
+    if q.model_id and "/" in q.model_id:
+        req_provider, req_model = q.model_id.split("/", 1)
+        if req_provider != settings.llm or req_model != settings.llm_model:
+            try:
+                select_model(ModelSelectRequest(provider=req_provider, model=req_model, session_id=q.session_id))
+            except Exception as e:
+                log.warning("Could not auto-align LLM with q.model_id %s: %s", q.model_id, e)
 
 
 @app.post("/api/ask")
 def ask(q: Question, user: dict | None = Depends(get_optional_user)):
     enforce_grade(user, q.grade)
     check_subject(q)
+    align_model_for_request(q)
     parental_config = get_active_parental_filtering_config()
     # Content Moderation Screening
     safety_result = evaluate_content(
@@ -318,6 +585,8 @@ def ask(q: Question, user: dict | None = Depends(get_optional_user)):
         raise HTTPException(502, explain(error)) from error
     latency = round(time.time() - started, 3)
     log.info("Answered in %.1fs (found=%s)", latency, result["found"])
+    active_model_id = q.model_id or f"{settings.llm}/{settings.llm_model}"
+    result["model_id"] = active_model_id
     log_chat_turn(
         make_turn_record(
             q,
@@ -338,6 +607,7 @@ def ask_stream(q: Question, user: dict | None = Depends(get_optional_user)):
     """Streams the answer as it is written, one JSON object per line."""
     enforce_grade(user, q.grade)
     check_subject(q)
+    align_model_for_request(q)
     parental_config = get_active_parental_filtering_config()
     # Content Moderation Screening
     safety_result = evaluate_content(
@@ -465,6 +735,8 @@ def ask_stream(q: Question, user: dict | None = Depends(get_optional_user)):
             ):
                 if event.get("type") == "done":
                     latency = round(time.time() - started, 3)
+                    active_model_id = q.model_id or f"{settings.llm}/{settings.llm_model}"
+                    event["model_id"] = active_model_id
                     log_chat_turn(
                         make_turn_record(
                             q,
@@ -510,8 +782,22 @@ def login_page():
     """Serves the student authentication portal."""
     login_html = ROOT / "frontend" / "login.html"
     if login_html.exists():
-        return FileResponse(login_html)
+        response = FileResponse(login_html)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     return FileResponse(ROOT / "frontend" / "index.html")
+
+
+@app.get("/")
+def serve_index():
+    """Serves index.html with cache-busting headers to prevent stale UI bundles."""
+    response = FileResponse(ROOT / "frontend" / "index.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 # The textbook PDFs, so every source can link to the exact page it came from

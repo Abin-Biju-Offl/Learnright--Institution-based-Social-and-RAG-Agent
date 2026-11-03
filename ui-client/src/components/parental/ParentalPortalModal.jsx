@@ -40,7 +40,7 @@ export default function ParentalPortalModal({
 
       const introTimer = setTimeout(() => {
         setShowIntro(false);
-        setActiveTab('overview');
+        setActiveTab(safeTab);
       }, 1400);
 
       return () => clearTimeout(introTimer);
@@ -190,7 +190,7 @@ export default function ParentalPortalModal({
               className="parental-intro-screen"
               onClick={() => {
                 setShowIntro(false);
-                setActiveTab('overview');
+                setActiveTab(getSafeTab(initialTab));
               }}
               title="Click to jump to Overview"
             >

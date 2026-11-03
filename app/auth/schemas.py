@@ -10,12 +10,13 @@ from pydantic import BaseModel, Field
 # ──────────────────────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    """Register a new student or admin account."""
+    """Register a new student, lecturer (faculty), or admin account."""
     username: str = Field(min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_]+$")
     password: str = Field(min_length=6, max_length=128)
-    role: str = Field(default="student", description="'student' or 'org_admin'")
-    grade: int | None = Field(default=None, ge=1, le=12, description="Student's class (1-12); optional for admins")
+    role: str = Field(default="student", description="'student', 'lecturer', or 'org_admin'")
+    grade: int | None = Field(default=None, ge=1, le=12, description="Student's class (1-12); optional for admins/faculty")
     full_name: str | None = Field(default=None, max_length=100)
+    subject_tags: list[str] | None = Field(default=None, description="Faculty taught subjects")
 
 
 class LoginRequest(BaseModel):

@@ -56,7 +56,22 @@ export default function OverviewTab({ token, onSwitchTab }) {
     );
   }
 
-  if (!data) return null;
+  if (!data) {
+    return (
+      <div style={{ textAlign: 'center', padding: '48px 24px', color: '#8e918f' }}>
+        <div style={{ fontSize: '28px', marginBottom: '12px' }}>📊</div>
+        <p style={{ margin: '0 0 16px 0', fontSize: '14px' }}>No activity metrics recorded yet.</p>
+        <button
+          type="button"
+          onClick={fetchOverview}
+          className="parental-preset-btn"
+          style={{ padding: '8px 18px', background: 'rgba(138, 180, 248, 0.15)', color: '#8ab4f8' }}
+        >
+          🔄 Refresh Safety Metrics
+        </button>
+      </div>
+    );
+  }
 
   const compliancePercent = data.safety_compliance_rate_percent ?? 100;
   const hasUnreviewed = (data.unreviewed_alerts || 0) > 0;

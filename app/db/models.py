@@ -30,7 +30,15 @@ class Institution(Base):
 
     id = Column(String(32), primary_key=True, default=lambda: generate_uuid("inst"))
     name = Column(String(150), nullable=False, index=True)
-    demo_verification_id = Column(String(64), nullable=False, unique=True, index=True)
+    school_code = Column(String(64), nullable=True, unique=True, index=True)
+    demo_verification_id = Column(String(64), nullable=True, index=True)
+    location = Column(String(200), nullable=True)
+    academic_year = Column(String(32), nullable=True, default="2026-2027")
+    website = Column(String(255), nullable=True)
+    affiliation_number = Column(String(100), nullable=True)
+    medium_of_instruction = Column(String(64), nullable=True, default="English")
+    education_levels = Column(Text, nullable=True)  # JSON-serialized list
+    available_classes = Column(String(100), nullable=True, default="LKG–Grade 12")
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

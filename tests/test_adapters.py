@@ -31,10 +31,78 @@ def test_default_setup_is_free_and_local(monkeypatch):
     ("llm", "opea", "OPEA"),
 ])
 def test_opea_mode_adapters(monkeypatch, setting, value, expected):
-    pytest.importorskip("llama_index.llms.openai_like", reason="optional: pip install -r requirements-opea.txt")
+    pytest.importorskip("llama_index.llms.openai_like", reason="optional: pip install -r requirements.txt")
     monkeypatch.setattr(settings, setting, value)
     make = adapters.make_embed_model if setting == "embedder" else adapters.make_llm
     assert type(make()).__name__ == expected
+
+
+def test_claude_adapter(monkeypatch):
+    monkeypatch.setattr(settings, "llm", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test-key")
+    llm = adapters.make_llm()
+    assert type(llm).__name__ == "Anthropic"
+    assert llm.model == "claude-3-5-sonnet-latest"
+
+
+def test_codex_openai_adapter(monkeypatch):
+    monkeypatch.setattr(settings, "llm", "codex")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test-key")
+    llm = adapters.make_llm()
+    assert type(llm).__name__ == "OpenAI"
+    assert llm.model == "gpt-4o-mini"
+
+
+def test_antigravity_gemini_adapter(monkeypatch):
+    from unittest.mock import MagicMock
+    import google.generativeai as genai
+    mock_meta = MagicMock()
+    mock_meta.supported_generation_methods = ["generateContent"]
+    mock_meta.output_token_limit = 8192
+    monkeypatch.setattr(genai, "get_model", lambda m: mock_meta)
+    monkeypatch.setattr(genai, "GenerativeModel", lambda *args, **kwargs: MagicMock())
+
+    try:
+        from google import genai as modern_genai
+        monkeypatch.setattr(modern_genai.models.Models, "get", lambda *args, **kwargs: mock_meta)
+    except Exception:
+        pass
+
+    monkeypatch.setattr(settings, "llm", "antigravity")
+    monkeypatch.setattr(settings, "gemini_api_key", "test-gemini-key")
+    llm = adapters.make_llm()
+    assert type(llm).__name__ in ("GoogleGenAI", "Gemini")
+    assert "gemini" in llm.model
+
+
+def test_groq_adapter(monkeypatch):
+    monkeypatch.setattr(settings, "llm", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", "gsk_test_groq_key")
+    llm = adapters.make_llm()
+    assert type(llm).__name__ == "Groq"
+    assert llm.model in ("llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b")
+
+
+def test_grok_adapter_auto_detects_groq_or_xai(monkeypatch):
+    monkeypatch.setattr(settings, "llm", "grok")
+    monkeypatch.setattr(settings, "grok_api_key", "gsk_test_key_from_groq")
+    llm = adapters.make_llm()
+    assert type(llm).__name__ == "Groq"
+
+    monkeypatch.setattr(settings, "grok_api_key", "xai-test-key")
+    llm2 = adapters.make_llm()
+    assert type(llm2).__name__ == "OpenAILike"
+    assert llm2.model == "grok-2-latest"
+
+
+def test_missing_api_key_raises_informative_error(monkeypatch):
+    monkeypatch.setattr(settings, "llm", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    monkeypatch.setattr(settings, "grok_api_key", "")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GROK_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="Missing Groq API key"):
+        adapters.make_llm()
 
 
 def test_every_llm_gets_the_same_answer_limits(monkeypatch):

@@ -429,3 +429,73 @@
   color: #c58af9;
   margin-right: 4px;
 }
+
+/* ── Modern 2-Column Organization Setup Layout ── */
+.inst-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 640px) {
+  .inst-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.inst-section-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inst-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8ab4f8;
+}
+
+.inst-helper {
+  font-size: 11px;
+  color: #8e918f;
+  margin-top: 3px;
+  line-height: 1.35;
+}
+
+.inst-level-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.inst-level-chip {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #9aa0a6;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.inst-level-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.inst-level-chip.active {
+  background: rgba(138, 180, 248, 0.18);
+  border-color: rgba(138, 180, 248, 0.45);
+  color: #8ab4f8;
+  font-weight: 600;
+}
+

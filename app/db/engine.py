@@ -43,3 +43,4 @@ def init_db():
     """Create all tables defined on Base."""
     DATABASE_FILE.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+

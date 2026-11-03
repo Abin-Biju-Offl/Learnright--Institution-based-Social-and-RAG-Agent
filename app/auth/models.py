@@ -66,17 +66,23 @@ def _sync_to_sqlite(user_dict: dict[str, Any]) -> None:
                     sql_user.subject_tags = user_dict["subject_tags"]
                 db.add(sql_user)
             else:
-                sql_user.password_salt = user_dict.get("password_salt", sql_user.password_salt)
-                sql_user.password_hash = user_dict.get("password_hash", sql_user.password_hash)
-                sql_user.full_name = user_dict.get("full_name", sql_user.full_name)
-                sql_user.role = user_dict.get("role", sql_user.role)
-                sql_user.grade = user_dict.get("grade", sql_user.grade)
-                sql_user.institution_id = user_dict.get("institution_id", sql_user.institution_id)
-                sql_user.class_id = user_dict.get("class_id", sql_user.class_id)
-                sql_user.section_id = user_dict.get("section_id", sql_user.section_id)
-                if "subject_tags" in user_dict:
+                sql_user.password_salt = user_dict.get("password_salt") or sql_user.password_salt
+                sql_user.password_hash = user_dict.get("password_hash") or sql_user.password_hash
+                sql_user.full_name = user_dict.get("full_name") or sql_user.full_name
+                if user_dict.get("role"):
+                    sql_user.role = user_dict["role"]
+                if user_dict.get("grade") is not None:
+                    sql_user.grade = user_dict["grade"]
+                if user_dict.get("institution_id"):
+                    sql_user.institution_id = user_dict["institution_id"]
+                if user_dict.get("class_id"):
+                    sql_user.class_id = user_dict["class_id"]
+                if user_dict.get("section_id"):
+                    sql_user.section_id = user_dict["section_id"]
+                if user_dict.get("subject_tags"):
                     sql_user.subject_tags = user_dict["subject_tags"]
-                sql_user.is_active = user_dict.get("is_active", sql_user.is_active)
+                if "is_active" in user_dict:
+                    sql_user.is_active = user_dict["is_active"]
             db.commit()
         finally:
             db.close()
@@ -210,12 +216,36 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
 
 
 def get_user_by_username(username: str) -> dict[str, Any] | None:
-    """Look up a user by username."""
+    """Look up a user by username and merge fresh SQLite institutional attributes."""
     with _users_lock:
         users = _read_users()
     user = next((u for u in users if u["username"].lower() == username.strip().lower()), None)
     if user is None:
         return None
+
+    try:
+        from app.db.engine import SessionLocal
+        from app.db.models import User as SqlUser, Institution as SqlInst
+
+        db = SessionLocal()
+        try:
+            sql_u = db.query(SqlUser).filter(SqlUser.username == user["username"]).first()
+            if sql_u:
+                user["role"] = sql_u.role
+                user["institution_id"] = sql_u.institution_id
+                user["class_id"] = sql_u.class_id
+                user["section_id"] = sql_u.section_id
+                user["grade"] = sql_u.grade
+                user["subject_tags"] = sql_u.subject_tags
+                if sql_u.institution_id:
+                    inst = db.query(SqlInst).filter(SqlInst.id == sql_u.institution_id).first()
+                    if inst:
+                        user["institution_name"] = inst.name
+        finally:
+            db.close()
+    except Exception:
+        pass
+
     return _public_user(user)
 
 

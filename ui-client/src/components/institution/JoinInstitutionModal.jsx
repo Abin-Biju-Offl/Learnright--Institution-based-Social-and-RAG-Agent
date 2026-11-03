@@ -48,9 +48,11 @@ export default function JoinInstitutionModal({
     }
   }, [isOpen, initialInviteToken, handleVerify]);
 
+  const isValidJwt = (t) => typeof t === 'string' && t.trim().split('.').length === 3;
+
   const handleAcceptInvite = async () => {
-    if (!token) {
-      setErrorMsg('Please sign in first before accepting an invite link.');
+    if (!token || !isValidJwt(token)) {
+      setErrorMsg('Please sign in or select a demo role in the bottom-left profile menu before accepting an invite.');
       return;
     }
     const cleanToken = inviteInput.trim();
@@ -168,3 +170,4 @@ export default function JoinInstitutionModal({
     </div>
   );
 }
+

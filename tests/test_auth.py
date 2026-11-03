@@ -4,19 +4,29 @@ Unit and integration tests for JWT Authentication and Class-based Authorization.
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 import app.main
 from app.auth.dependencies import enforce_grade
 from app.auth.jwt_handler import create_token_pair, decode_access_token, decode_refresh_token
 from app.auth.models import USERS_FILE, authenticate_user, create_user, get_user_by_id
-from app.auth.routes import login, me, refresh, register
+from app.auth.routes import DemoSwitchRequest, demo_switch, login, me, refresh, register
 from app.auth.schemas import LoginRequest, RefreshRequest, RegisterRequest
+from app.db.engine import Base
 from app.main import subjects
 
 
 @pytest.fixture(autouse=True)
 def clean_users_file(tmp_path, monkeypatch):
-    """Isolate users.json for every test."""
+    """Isolate users.json and SQLite database for every test."""
+    test_db_file = tmp_path / "test_ncert_auth.db"
+    test_db_url = f"sqlite:///{test_db_file}"
+    engine = create_engine(test_db_url, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    monkeypatch.setattr("app.db.engine.SessionLocal", TestingSessionLocal)
     test_users_file = tmp_path / "test_users.json"
     monkeypatch.setattr("app.auth.models.USERS_FILE", test_users_file)
     monkeypatch.setattr("app.auth.passwords.PBKDF2_ITERATIONS", 1000)
@@ -144,3 +154,25 @@ def test_grade_enforcement_blocks_cross_class_access():
     assert exc_info.value.status_code == 403
     assert "authorized for Class 10 textbooks only" in exc_info.value.detail
     assert "cannot access Class 5" in exc_info.value.detail
+
+
+def test_demo_role_switch():
+    """Demo switch must return valid signed tokens for admin, lecturer, and student."""
+    # 1. Org admin switch
+    res_admin = demo_switch(DemoSwitchRequest(role="org_admin"))
+    assert res_admin.user["role"] == "org_admin"
+    payload_admin = decode_access_token(res_admin.access_token)
+    assert payload_admin["role"] == "org_admin"
+
+    # 2. Lecturer switch
+    res_lect = demo_switch(DemoSwitchRequest(role="lecturer"))
+    assert res_lect.user["role"] == "lecturer"
+    payload_lect = decode_access_token(res_lect.access_token)
+    assert payload_lect["role"] == "lecturer"
+
+    # 3. Student switch
+    res_stud = demo_switch(DemoSwitchRequest(role="student", grade=10))
+    assert res_stud.user["role"] == "student"
+    payload_stud = decode_access_token(res_stud.access_token)
+    assert payload_stud["role"] == "student"
+    assert payload_stud["grade"] == 10

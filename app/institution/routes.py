@@ -218,3 +218,4 @@ def list_institution_students(
     return InstitutionService.list_students(
         db, current_user["institution_id"], class_id=class_id, section_id=section_id
     )
+

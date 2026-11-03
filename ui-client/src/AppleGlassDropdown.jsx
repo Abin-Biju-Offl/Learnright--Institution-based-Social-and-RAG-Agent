@@ -6,6 +6,7 @@ export function AppleGlassDropdown({
   label,
   value,
   options = [],
+  placeholder = '',
   onChange,
   disabled = false,
   className = '',
@@ -26,7 +27,9 @@ export function AppleGlassDropdown({
   const menuRef = useRef(null);
 
   const selectedOpt = options.find((opt) => String(opt.value) === String(value));
-  const displayText = selectedOpt ? selectedOpt.label : (options[0]?.label || 'Select');
+  const displayText = selectedOpt
+    ? selectedOpt.label
+    : (placeholder || options[0]?.label || 'Select');
 
   // Compute exact viewport position when open
   const updatePosition = () => {
@@ -185,7 +188,7 @@ export function AppleGlassDropdown({
                 const isSelected = String(opt.value) === String(value);
                 return (
                   <div
-                    key={opt.value}
+                    key={opt.value || opt.label}
                     className={`apple-glass-dropdown-item ${isSelected ? 'selected' : ''}`}
                     role="option"
                     aria-selected={isSelected}

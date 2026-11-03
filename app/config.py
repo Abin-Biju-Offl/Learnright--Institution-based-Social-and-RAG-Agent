@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     # Adapters: which service does each job. app/adapters.py turns these names into objects.
     #   simple mode (default, free, no Docker): ollama + ollama + simple
     #   OPEA mode (optional, Docker):           tei + opea (or openai_like) + qdrant
-    embedder: str = "ollama"       # ollama | tei | opea
-    llm: str = "ollama"            # ollama | openai_like | opea
+    #   Cloud / SDK providers:                  claude | codex | antigravity | groq | grok
+    embedder: str = "ollama"       # ollama | tei | opea | openai | gemini
+    llm: str = "ollama"            # ollama | openai_like | opea | claude | codex | antigravity | groq | grok
     vector_store: str = "simple"   # simple (files in storage/index) | qdrant
 
     # The two models. Their names must match what the chosen service calls them.
@@ -36,6 +37,18 @@ class Settings(BaseSettings):
     embed_url: str = "http://localhost:6006"       # embedder=tei or opea
     llm_url: str = "http://localhost:9000/v1"      # llm=openai_like or opea
     qdrant_url: str = ""                           # empty = Qdrant keeps its files in storage/qdrant, no server
+
+    # API Keys & URLs for Cloud & SDK adapters
+    anthropic_api_key: str = ""
+    claude_api_key: str = ""
+    openai_api_key: str = ""
+    codex_api_key: str = ""
+    gemini_api_key: str = ""
+    antigravity_api_key: str = ""
+    google_api_key: str = ""
+    groq_api_key: str = ""
+    grok_api_key: str = ""
+    grok_url: str = "https://api.x.ai/v1"
 
     # Where the textbook PDFs are, and where the index and feedback are saved
     data_dir: Path = ROOT / "data"
@@ -83,3 +96,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def reload_env_settings():
+    """Dynamically re-reads API keys and credentials from .env from disk so newly added keys are picked up immediately without restarting."""
+    from dotenv import dotenv_values
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    vals = dotenv_values(env_path)
+    for k, v in vals.items():
+        if v is not None and v != "":
+            attr = k.lower()
+            if hasattr(settings, attr) and (attr.endswith("_key") or attr.endswith("_url")):
+                setattr(settings, attr, v)

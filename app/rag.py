@@ -88,6 +88,19 @@ def condense_query(question: str, history: list[dict] | None, llm: LLM | None) -
             log.info("Condense query: '%s' -> '%s'", question, first_line)
             return first_line
     except Exception as e:
+        err_msg = str(e)
+        if ("model_not_found" in err_msg or "does not exist or you do not have access to it" in err_msg) and settings.llm == "groq" and settings.llm_model != "openai/gpt-oss-120b":
+            try:
+                settings.llm_model = "openai/gpt-oss-120b"
+                from app.adapters import make_llm
+                new_llm = make_llm()
+                resp = new_llm.complete(prompt)
+                text = (resp.text or "").strip().strip('"').strip("'")
+                first_line = text.split("\n")[0].strip()
+                if first_line and len(first_line) >= 4 and len(first_line) <= 200:
+                    return first_line
+            except Exception:
+                pass
         log.warning("Query condensation failed, falling back to original: %s", e)
 
     return question
@@ -189,6 +202,21 @@ class RAG:
 
     # ----------------------------------------------------------- generate ---
 
+    def _safe_stream_chat(self, messages: list[ChatMessage]):
+        """Streams chat tokens with automatic fallback if a model returns 404 (e.g. Groq free tier)."""
+        try:
+            yield from self.llm.stream_chat(messages)
+        except Exception as e:
+            err_msg = str(e)
+            if ("model_not_found" in err_msg or "does not exist or you do not have access to it" in err_msg) and settings.llm == "groq" and settings.llm_model != "openai/gpt-oss-120b":
+                log.warning("Groq model '%s' not accessible (404). Falling back to 'openai/gpt-oss-120b': %s", settings.llm_model, e)
+                settings.llm_model = "openai/gpt-oss-120b"
+                from app.adapters import make_llm
+                self.llm = make_llm()
+                yield from self.llm.stream_chat(messages)
+            else:
+                raise
+
     def ask_stream(
         self,
         question: str,
@@ -215,7 +243,7 @@ class RAG:
             system_text = PURE_LLM_SYSTEM_PROMPT.format(grade=grade, depth=depth_for(grade), language=language)
             guardrail = StreamingOutputGuardrail(system_prompt=system_text, grade=grade, language=language)
             messages = [ChatMessage(**m) for m in build_pure_llm_messages(question, grade, language, history=history)]
-            for chunk in self.llm.stream_chat(messages):
+            for chunk in self._safe_stream_chat(messages):
                 delta = chunk.delta or ""
                 if delta:
                     safe_delta, action = guardrail.process_delta(delta)
@@ -387,7 +415,7 @@ class RAG:
                 answer += claim
                 yield {"type": "token", "text": claim}
 
-        for chunk in self.llm.stream_chat(messages):
+        for chunk in self._safe_stream_chat(messages):
             delta = chunk.delta or ""
             if delta:
                 if t_first_token is None:

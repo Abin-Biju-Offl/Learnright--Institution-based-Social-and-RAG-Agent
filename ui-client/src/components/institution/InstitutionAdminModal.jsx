@@ -11,7 +11,20 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
 
   // Create institution state
   const [newInstName, setNewInstName] = useState('');
-  const [newInstDemoId, setNewInstDemoId] = useState('');
+  const [newSchoolCode, setNewSchoolCode] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newAcademicYear, setNewAcademicYear] = useState('2026-2027');
+  const [newWebsite, setNewWebsite] = useState('');
+  const [newAffiliationNumber, setNewAffiliationNumber] = useState('');
+  const [newMediumOfInstruction, setNewMediumOfInstruction] = useState('English');
+  const [newEducationLevels, setNewEducationLevels] = useState(['Primary', 'Middle', 'Secondary', 'Higher Secondary']);
+  const [newAvailableClasses, setNewAvailableClasses] = useState('LKG–Grade 12');
+
+  const toggleEducationLevel = (lvl) => {
+    setNewEducationLevels((prev) =>
+      prev.includes(lvl) ? prev.filter((x) => x !== lvl) : [...prev, lvl]
+    );
+  };
 
   // Create class state
   const [newGrade, setNewGrade] = useState(10);
@@ -22,6 +35,8 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
   const [newSectionName, setNewSectionName] = useState('A');
   const [newSectionRoom, setNewSectionRoom] = useState('');
 
+  const isValidJwt = (t) => typeof t === 'string' && t.trim().split('.').length === 3;
+
   // Generate invite state
   const [inviteTargetRole, setInviteTargetRole] = useState('student');
   const [inviteClassId, setInviteClassId] = useState('');
@@ -29,7 +44,10 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
   const [generatedInvite, setGeneratedInvite] = useState(null);
 
   const fetchInstitutionDetails = useCallback(async () => {
-    if (!token) return;
+    if (!token || !isValidJwt(token)) {
+      setInstData(null);
+      return;
+    }
     setLoading(true);
     setErrorMsg('');
     try {
@@ -45,6 +63,8 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
         }
       } else if (res.status === 400 || res.status === 404) {
         setInstData(null);
+      } else if (res.status === 401) {
+        setErrorMsg('Admin authorization expired. Please re-select Org Admin in the demo menu or log in again.');
       }
     } catch {
       setErrorMsg('Failed to load institution details. Check network connection.');
@@ -54,7 +74,7 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
   }, [token, selectedClassId, inviteClassId]);
 
   const fetchFaculty = useCallback(async () => {
-    if (!token) return;
+    if (!token || !isValidJwt(token)) return;
     try {
       const res = await fetch('/api/institutions/faculty', {
         headers: { Authorization: `Bearer ${token}` },
@@ -79,8 +99,12 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
   // Handle Create Institution
   const handleCreateInstitution = async (e) => {
     e.preventDefault();
-    if (!newInstName.trim() || !newInstDemoId.trim()) {
-      setErrorMsg('Please enter both Institution Name and Demo Verification ID.');
+    if (!newInstName.trim() || !newSchoolCode.trim()) {
+      setErrorMsg('Please enter both School Name and School Code / ID.');
+      return;
+    }
+    if (!token || !isValidJwt(token)) {
+      setErrorMsg('Please select Org Admin in the bottom-left profile menu or sign in as Admin.');
       return;
     }
     setLoading(true);
@@ -94,11 +118,18 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
         },
         body: JSON.stringify({
           name: newInstName.trim(),
-          demo_verification_id: newInstDemoId.trim(),
+          school_code: newSchoolCode.trim().toUpperCase(),
+          location: newLocation.trim() || undefined,
+          academic_year: newAcademicYear.trim() || '2026-2027',
+          website: newWebsite.trim() || undefined,
+          affiliation_number: newAffiliationNumber.trim() || undefined,
+          medium_of_instruction: newMediumOfInstruction.trim() || 'English',
+          education_levels: newEducationLevels,
+          available_classes: newAvailableClasses.trim() || 'LKG–Grade 12',
         }),
       });
       if (res.ok) {
-        setSuccessMsg('Institution created successfully!');
+        setSuccessMsg('Institution registered successfully!');
         if (onInstitutionUpdated) onInstitutionUpdated();
         fetchInstitutionDetails();
         fetchFaculty();
@@ -261,45 +292,172 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
 
         {/* If no institution yet: Start Institution screen */}
         {!instData?.institution ? (
-          <div className="inst-body" style={{ maxWidth: 540, margin: 'auto', textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🏫</div>
-            <h2 style={{ fontSize: 24, fontWeight: 700, color: '#ffffff', margin: '0 0 8px 0' }}>
-              Start an Institution
-            </h2>
-            <p style={{ color: '#9aa0a6', fontSize: 14, marginBottom: 24 }}>
-              Register your school or academy to structure classes, assign lecturers, and invite students.
-            </p>
+          <div className="inst-body" style={{ maxWidth: 660, margin: 'auto' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 44, marginBottom: 12 }}>🏫</div>
+              <h2 style={{ fontSize: 24, fontWeight: 700, color: '#ffffff', margin: '0 0 6px 0' }}>
+                Register Your Institution
+              </h2>
+              <p style={{ color: '#9aa0a6', fontSize: 14 }}>
+                Set up your school organization to structure classes, assign faculty advisors, and manage student curriculum access.
+              </p>
+            </div>
 
-            {errorMsg && <div style={{ color: '#f28b82', marginBottom: 16 }}>{errorMsg}</div>}
-            {successMsg && <div style={{ color: '#81c995', marginBottom: 16 }}>{successMsg}</div>}
+            {errorMsg && (
+              <div style={{ color: '#f28b82', background: 'rgba(242, 139, 130, 0.1)', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(242, 139, 130, 0.25)', marginBottom: 16 }}>
+                ⚠️ {errorMsg}
+              </div>
+            )}
+            {successMsg && (
+              <div style={{ color: '#81c995', background: 'rgba(129, 201, 149, 0.1)', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(129, 201, 149, 0.25)', marginBottom: 16 }}>
+                ✓ {successMsg}
+              </div>
+            )}
 
             <form onSubmit={handleCreateInstitution} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div className="inst-form-group" style={{ textAlign: 'left' }}>
-                <label className="inst-label">School / Institution Name</label>
+              {/* Section A: School Information */}
+              <div className="inst-section-divider">
+                <span style={{ fontSize: 15 }}>🏛️</span>
+                <span className="inst-section-title">A. School Information</span>
+              </div>
+
+              <div className="inst-form-grid">
+                <div className="inst-form-group">
+                  <label className="inst-label">School Name *</label>
+                  <input
+                    type="text"
+                    className="inst-input"
+                    placeholder="e.g. Delhi Public School"
+                    value={newInstName}
+                    onChange={(e) => setNewInstName(e.target.value)}
+                    required
+                  />
+                  <span className="inst-helper">Identifies the school across all classes</span>
+                </div>
+
+                <div className="inst-form-group">
+                  <label className="inst-label">School Code / ID *</label>
+                  <input
+                    type="text"
+                    className="inst-input"
+                    placeholder="e.g. DPS-DELHI-01"
+                    value={newSchoolCode}
+                    onChange={(e) => setNewSchoolCode(e.target.value)}
+                    required
+                  />
+                  <span className="inst-helper">Unique school code for student &amp; faculty joining</span>
+                </div>
+
+                <div className="inst-form-group">
+                  <label className="inst-label">Location (Board &amp; Region)</label>
+                  <input
+                    type="text"
+                    className="inst-input"
+                    placeholder="e.g. R.K. Puram, New Delhi, India"
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                  />
+                  <span className="inst-helper">Identifies education board &amp; regional context</span>
+                </div>
+
+                <div className="inst-form-group">
+                  <label className="inst-label">Academic Year</label>
+                  <select
+                    className="inst-select"
+                    value={newAcademicYear}
+                    onChange={(e) => setNewAcademicYear(e.target.value)}
+                  >
+                    <option value="2026-2027">2026–2027 (Current Syllabus)</option>
+                    <option value="2025-2026">2025–2026</option>
+                    <option value="2027-2028">2027–2028</option>
+                  </select>
+                  <span className="inst-helper">Selects current syllabus &amp; academic cycle</span>
+                </div>
+
+                <div className="inst-form-group">
+                  <label className="inst-label">Official Website</label>
+                  <input
+                    type="url"
+                    className="inst-input"
+                    placeholder="https://dpsdelhi.edu.in"
+                    value={newWebsite}
+                    onChange={(e) => setNewWebsite(e.target.value)}
+                  />
+                  <span className="inst-helper">Verifies official school accreditation</span>
+                </div>
+
+                <div className="inst-form-group">
+                  <label className="inst-label">School Affiliation Number</label>
+                  <input
+                    type="text"
+                    className="inst-input"
+                    placeholder="e.g. CBSE/AFF/2026/89410"
+                    value={newAffiliationNumber}
+                    onChange={(e) => setNewAffiliationNumber(e.target.value)}
+                  />
+                  <span className="inst-helper">Verifies board affiliation record</span>
+                </div>
+
+                <div className="inst-form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="inst-label">Medium of Instruction</label>
+                  <select
+                    className="inst-select"
+                    value={newMediumOfInstruction}
+                    onChange={(e) => setNewMediumOfInstruction(e.target.value)}
+                  >
+                    <option value="English">English</option>
+                    <option value="Hindi">Hindi</option>
+                    <option value="Bilingual">Bilingual (English &amp; Hindi)</option>
+                  </select>
+                  <span className="inst-helper">Default language for curriculum textbooks and explanations</span>
+                </div>
+              </div>
+
+              {/* Section B: Academic Structure */}
+              <div className="inst-section-divider" style={{ marginTop: 14 }}>
+                <span style={{ fontSize: 15 }}>📚</span>
+                <span className="inst-section-title">B. Academic Structure</span>
+              </div>
+
+              <div className="inst-form-group">
+                <label className="inst-label">Education Levels Supported</label>
+                <div className="inst-level-chips">
+                  {['Primary', 'Middle', 'Secondary', 'Higher Secondary'].map((lvl) => {
+                    const active = newEducationLevels.includes(lvl);
+                    return (
+                      <button
+                        key={lvl}
+                        type="button"
+                        className={`inst-level-chip ${active ? 'active' : ''}`}
+                        onClick={() => toggleEducationLevel(lvl)}
+                      >
+                        {active ? '✓ ' : '+ '}{lvl}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="inst-helper">Click to toggle active educational tiers</span>
+              </div>
+
+              <div className="inst-form-group">
+                <label className="inst-label">Available Classes Span</label>
                 <input
                   type="text"
                   className="inst-input"
-                  placeholder="e.g. Delhi Public School, R.K. Puram"
-                  value={newInstName}
-                  onChange={(e) => setNewInstName(e.target.value)}
-                  required
+                  placeholder="e.g. LKG–Grade 12 or Grade 1–10"
+                  value={newAvailableClasses}
+                  onChange={(e) => setNewAvailableClasses(e.target.value)}
                 />
+                <span className="inst-helper">Span of grades offered by your institution</span>
               </div>
 
-              <div className="inst-form-group" style={{ textAlign: 'left' }}>
-                <label className="inst-label">Demo Verification ID / Code</label>
-                <input
-                  type="text"
-                  className="inst-input"
-                  placeholder="e.g. DPS-2026-DEMO"
-                  value={newInstDemoId}
-                  onChange={(e) => setNewInstDemoId(e.target.value)}
-                  required
-                />
-              </div>
-
-              <button type="submit" className="inst-btn inst-btn-primary" style={{ justifyContent: 'center', marginTop: 10 }}>
-                🚀 Launch Institution (Org Admin)
+              <button
+                type="submit"
+                className="inst-btn inst-btn-primary"
+                disabled={loading}
+                style={{ justifyContent: 'center', marginTop: 14, height: 46, fontSize: 15 }}
+              >
+                {loading ? 'Registering School…' : '🚀 Launch Institution (Org Admin)'}
               </button>
             </form>
           </div>
@@ -643,3 +801,4 @@ export default function InstitutionAdminModal({ isOpen, onClose, token, currentU
     </div>
   );
 }
+

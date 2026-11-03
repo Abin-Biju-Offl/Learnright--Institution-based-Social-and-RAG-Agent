@@ -28,7 +28,13 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = credentials.credentials
+    token = credentials.credentials.strip() if credentials.credentials else ""
+    if not token or token.lower() in ("null", "undefined", "none"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please provide a valid Bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # 1. Check if it's a valid parental session token
     if validate_session(token):
@@ -76,11 +82,17 @@ def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> dict | None:
     """
-    Returns the authenticated user dict or None if no token was supplied.
+    Returns the authenticated user dict or None if no token was supplied or token is invalid.
     """
     if not credentials or not credentials.credentials:
         return None
-    return get_current_user(credentials)
+    token = credentials.credentials.strip().lower()
+    if not token or token in ("null", "undefined", "none"):
+        return None
+    try:
+        return get_current_user(credentials)
+    except HTTPException:
+        return None
 
 
 # Backwards compatibility aliases

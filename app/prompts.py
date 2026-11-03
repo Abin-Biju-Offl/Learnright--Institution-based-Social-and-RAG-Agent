@@ -7,9 +7,13 @@ retrieved textbook excerpts from immutable system policies.
 """
 
 import re
+from app.config import settings
+from app.context_builder import build_context_history, estimate_tokens
+from app.registry import get_model_spec
 from app.security.delimiters import sanitize_for_prompt
 
 NOT_FOUND = "Sorry, I couldn't find this in your textbook."
+CONTINUITY_NOTICE = "<continuity_notice>The earlier assistant replies in this conversation were written by a different model. Continue consistently with them.</continuity_notice>"
 
 HARDENED_SYSTEM_PROMPT = """<ncert_system_policy>
 You are the NCERT Textbook Assistant, an educational tutor for a Class {grade} student in India.
@@ -57,6 +61,9 @@ def build_messages(
     grade: int,
     language: str,
     history: list[dict] | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    summary: str | None = None,
 ) -> list[dict]:
     clean_q = sanitize_for_prompt(question.strip())
     formatted_sources = "\n\n".join(
@@ -69,8 +76,37 @@ def build_messages(
     system = SYSTEM_PROMPT.format(grade=grade, depth=depth_for(grade), not_found=NOT_FOUND, language=language)
     messages = [{"role": "system", "content": system}]
 
+    p = provider or settings.llm
+    m = model_name or settings.llm_model
+    spec = get_model_spec(p, m)
+
+    user_payload = (
+        f"<textbook_context>\n{formatted_sources}\n</textbook_context>\n\n"
+        f"<student_query>\n{clean_q}\n</student_query>"
+    )
+
     if history:
-        for turn in history[-6:]:
+        sys_tokens = estimate_tokens(system)
+        query_tokens = estimate_tokens(user_payload)
+        selected_turns, was_truncated, diff_model = build_context_history(
+            history, spec, sys_tokens, query_tokens, summary=summary
+        )
+
+        # SKILL.md Section 8: Model switch continuity notice
+        if diff_model:
+            messages.append({
+                "role": "system",
+                "content": CONTINUITY_NOTICE,
+            })
+
+        # SKILL.md Section 5.3: Rolling summary if present
+        if summary:
+            messages.append({
+                "role": "system",
+                "content": f"<earlier_conversation_summary>\n{summary}\n</earlier_conversation_summary>",
+            })
+
+        for turn in selected_turns:
             role = turn.get("role")
             content = sanitize_for_prompt((turn.get("content") or turn.get("text") or "").strip())
             if role in ("user", "assistant") and content:
@@ -79,11 +115,7 @@ def build_messages(
                     "content": f'<conversation_turn role="{role}">\n{content}\n</conversation_turn>',
                 })
 
-    user = (
-        f"<textbook_context>\n{formatted_sources}\n</textbook_context>\n\n"
-        f"<student_query>\n{clean_q}\n</student_query>"
-    )
-    messages.append({"role": "user", "content": user})
+    messages.append({"role": "user", "content": user_payload})
     return messages
 
 
@@ -110,6 +142,12 @@ CRITICAL SECURITY AND SAFETY BOUNDARIES (NON-NEGOTIABLE):
    - Start with a direct answer. Add a short bullet list only if it helps.
    - Write your answer in {language}.
    - Write plain text: no tables, no HTML tags, no LaTeX (write "V = IR", not "$V = IR$").
+
+5. CURRICULUM ACCURACY & CROSS-GRADE HONESTY:
+   - Do NOT assume or fabricate that a topic or story belongs to Class {grade} simply because the student is in Class {grade}.
+   - If a topic or character belongs to a different NCERT class or subject (for example, Lencho is from Class 10 English "A Letter to God", NOT Class 5), state the true grade and subject accurately.
+   - NEVER invent or hallucinate fictional chapter titles, fake stories, or incorrect subjects (e.g., do NOT invent a story called "The Rain" in Class 5 Social Science).
+   - If unsure about the exact curriculum placement, explain the factual concept directly using general knowledge without inventing fake school textbook chapters.
 </ncert_system_policy>"""
 
 PURE_LLM_SYSTEM_PROMPT = HARDENED_PURE_LLM_SYSTEM_PROMPT
@@ -120,13 +158,42 @@ def build_pure_llm_messages(
     grade: int,
     language: str,
     history: list[dict] | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    summary: str | None = None,
 ) -> list[dict]:
     clean_q = sanitize_for_prompt(question.strip())
     system = PURE_LLM_SYSTEM_PROMPT.format(grade=grade, depth=depth_for(grade), language=language)
     messages = [{"role": "system", "content": system}]
 
+    p = provider or settings.llm
+    m = model_name or settings.llm_model
+    spec = get_model_spec(p, m)
+
+    query_payload = f"<student_query>\n{clean_q}\n</student_query>"
+
     if history:
-        for turn in history[-6:]:
+        sys_tokens = estimate_tokens(system)
+        query_tokens = estimate_tokens(query_payload)
+        selected_turns, was_truncated, diff_model = build_context_history(
+            history, spec, sys_tokens, query_tokens, summary=summary
+        )
+
+        # SKILL.md Section 8: Model switch continuity notice
+        if diff_model:
+            messages.append({
+                "role": "system",
+                "content": CONTINUITY_NOTICE,
+            })
+
+        # SKILL.md Section 5.3: Rolling summary if present
+        if summary:
+            messages.append({
+                "role": "system",
+                "content": f"<earlier_conversation_summary>\n{summary}\n</earlier_conversation_summary>",
+            })
+
+        for turn in selected_turns:
             role = turn.get("role")
             content = sanitize_for_prompt((turn.get("content") or turn.get("text") or "").strip())
             if role in ("user", "assistant") and content:
@@ -135,7 +202,7 @@ def build_pure_llm_messages(
                     "content": f'<conversation_turn role="{role}">\n{content}\n</conversation_turn>',
                 })
 
-    messages.append({"role": "user", "content": f"<student_query>\n{clean_q}\n</student_query>"})
+    messages.append({"role": "user", "content": query_payload})
     return messages
 
 

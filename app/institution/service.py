@@ -2,9 +2,11 @@
 Business Logic Service for Institutions, Academic Hierarchy, Invites, and RBAC.
 """
 
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import create_token_pair
@@ -49,6 +51,31 @@ class InstitutionService:
                     break
             _write_users(users)
 
+    @classmethod
+    def _to_institution_response(cls, inst: Institution) -> InstitutionResponse:
+        levels = None
+        if inst.education_levels:
+            try:
+                levels = json.loads(inst.education_levels)
+            except Exception:
+                levels = None
+
+        return InstitutionResponse(
+            id=inst.id,
+            name=inst.name,
+            school_code=inst.school_code or inst.demo_verification_id,
+            demo_verification_id=inst.demo_verification_id,
+            location=inst.location,
+            academic_year=inst.academic_year,
+            website=inst.website,
+            affiliation_number=inst.affiliation_number,
+            medium_of_instruction=inst.medium_of_instruction,
+            education_levels=levels,
+            available_classes=inst.available_classes,
+            is_active=inst.is_active,
+            created_at=inst.created_at,
+        )
+
     # ── Institution Lifecycle ──
 
     @classmethod
@@ -56,19 +83,39 @@ class InstitutionService:
         cls, db: Session, current_user: dict, req: InstitutionCreateRequest
     ) -> InstitutionResponse:
         """Create a new institution and designate the creator as org_admin."""
+        code = (req.school_code or req.demo_verification_id or "").strip()
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="School Code / ID is required to identify the school.",
+            )
+
         existing = db.query(Institution).filter(
-            Institution.demo_verification_id == req.demo_verification_id.strip()
+            or_(
+                Institution.school_code == code,
+                Institution.demo_verification_id == code,
+            )
         ).first()
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Demo Verification ID '{req.demo_verification_id}' is already registered.",
+                detail=f"School Code / ID '{code}' is already registered.",
             )
+
+        levels_json = json.dumps(req.education_levels) if req.education_levels else None
 
         inst = Institution(
             id=generate_uuid("inst"),
             name=req.name.strip(),
-            demo_verification_id=req.demo_verification_id.strip(),
+            school_code=code,
+            demo_verification_id=code,
+            location=(req.location or "").strip() or None,
+            academic_year=(req.academic_year or "2026-2027").strip(),
+            website=(req.website or "").strip() or None,
+            affiliation_number=(req.affiliation_number or "").strip() or None,
+            medium_of_instruction=(req.medium_of_instruction or "English").strip(),
+            education_levels=levels_json,
+            available_classes=(req.available_classes or "LKG–Grade 12").strip(),
             is_active=True,
         )
         db.add(inst)
@@ -98,27 +145,31 @@ class InstitutionService:
             {"role": "org_admin", "institution_id": inst.id, "institution_name": inst.name},
         )
 
-        return InstitutionResponse(
-            id=inst.id,
-            name=inst.name,
-            demo_verification_id=inst.demo_verification_id,
-            is_active=inst.is_active,
-            created_at=inst.created_at,
-        )
+        return cls._to_institution_response(inst)
 
     @classmethod
     def join_institution(
         cls, db: Session, current_user: dict, req: InstitutionJoinRequest
     ) -> InstitutionResponse:
-        """Join an institution via its demo verification code."""
+        """Join an institution via its school code / ID or verification code."""
+        code = (req.school_code or req.demo_verification_id or "").strip()
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please enter a School Code or verification code.",
+            )
+
         inst = db.query(Institution).filter(
-            Institution.demo_verification_id == req.demo_verification_id.strip(),
+            or_(
+                Institution.school_code == code,
+                Institution.demo_verification_id == code,
+            ),
             Institution.is_active == True,
         ).first()
         if not inst:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Institution not found. Please verify the verification code.",
+                detail=f"Institution with code '{code}' not found.",
             )
 
         sql_u = db.query(SqlUser).filter(SqlUser.id == current_user["id"]).first()
@@ -131,16 +182,10 @@ class InstitutionService:
             {"institution_id": inst.id, "institution_name": inst.name},
         )
 
-        return InstitutionResponse(
-            id=inst.id,
-            name=inst.name,
-            demo_verification_id=inst.demo_verification_id,
-            is_active=inst.is_active,
-            created_at=inst.created_at,
-        )
+        return cls._to_institution_response(inst)
 
-    @staticmethod
-    def get_institution_summary(db: Session, institution_id: str) -> dict:
+    @classmethod
+    def get_institution_summary(cls, db: Session, institution_id: str) -> dict:
         """Fetch summary of classes, sections, and faculty for the given institution."""
         inst = db.query(Institution).filter(Institution.id == institution_id).first()
         if not inst:
@@ -185,13 +230,7 @@ class InstitutionService:
         ).count()
 
         return {
-            "institution": InstitutionResponse(
-                id=inst.id,
-                name=inst.name,
-                demo_verification_id=inst.demo_verification_id,
-                is_active=inst.is_active,
-                created_at=inst.created_at,
-            ),
+            "institution": cls._to_institution_response(inst),
             "total_students": total_students,
             "total_faculty": total_faculty,
             "classes": class_responses,
@@ -603,3 +642,4 @@ class InstitutionService:
                 )
             )
         return roster
+

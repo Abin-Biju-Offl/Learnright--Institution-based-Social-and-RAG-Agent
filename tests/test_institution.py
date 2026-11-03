@@ -221,3 +221,36 @@ def test_lecturer_subject_tags_and_class_advisor(test_setup):
     assert sen.subject_tags == ["Science", "Biology"]
     assert len(sen.advised_sections) == 1
     assert sen.advised_sections[0]["section_name"] == "A"
+
+
+def test_institution_extended_academic_structure(test_setup):
+    """Admin creates institution with complete school metadata & academic structure."""
+    db = test_setup
+    admin = create_user(username="headmaster_singh", password="password123", role="org_admin")
+    req = InstitutionCreateRequest(
+        name="St. Xavier's High School",
+        school_code="STX-DELHI-01",
+        location="New Delhi, India",
+        academic_year="2026-2027",
+        website="https://stxaviers.edu.in",
+        affiliation_number="CBSE/AFF/2026/77890",
+        medium_of_instruction="English",
+        education_levels=["Primary", "Middle", "Secondary", "Higher Secondary"],
+        available_classes="LKG–Grade 12",
+    )
+    inst = create_institution(req, current_user=admin, db=db)
+    assert inst.name == "St. Xavier's High School"
+    assert inst.school_code == "STX-DELHI-01"
+    assert inst.location == "New Delhi, India"
+    assert inst.academic_year == "2026-2027"
+    assert inst.education_levels == ["Primary", "Middle", "Secondary", "Higher Secondary"]
+
+    # Faculty registration check
+    lect = create_user(
+        username="prof_raman",
+        password="password123",
+        role="lecturer",
+        subject_tags=["Science", "Physics"],
+    )
+    assert lect["role"] == "lecturer"
+    assert "Physics" in lect["subject_tags"]

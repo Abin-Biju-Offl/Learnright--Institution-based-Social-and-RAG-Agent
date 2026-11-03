@@ -132,8 +132,15 @@ def decode_access_token(token: str) -> dict:
     Returns the full payload dict (with "sub", "username", "grade", "role", etc.).
     Raises TokenError on any problem.
     """
+    if not token or not isinstance(token, str) or token.strip().lower() in ("null", "undefined", "none", ""):
+        raise TokenError("Access token is missing or empty.")
+
+    clean_token = token.strip()
+    if clean_token.count(".") != 2:
+        raise TokenError("Malformed access token: JWT must contain exactly 3 dot-separated segments.")
+
     try:
-        payload = jwt.decode(token, _secret(), algorithms=[ALGORITHM])
+        payload = jwt.decode(clean_token, _secret(), algorithms=[ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise TokenError("Access token has expired. Please log in again or use your refresh token.")
     except jwt.InvalidTokenError as exc:
