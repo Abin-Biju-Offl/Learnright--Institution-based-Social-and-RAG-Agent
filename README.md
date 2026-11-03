@@ -1,6 +1,6 @@
-# NCERT Textbook Assistant (RAG)
+# Playright-Student Assistant
 
-Ask questions about your NCERT Class 10 textbooks and get answers that come
+**Playright-Student Assistant** is an offline-first RAG (Retrieval-Augmented Generation) application for students. Ask questions about your NCERT Class 10 textbooks and get answers that come
 **only from the textbook**, with the chapter and page they came from.
 Everything runs on your own computer with free, open models. No internet or
 API key needed once it's set up.
